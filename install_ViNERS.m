@@ -310,7 +310,7 @@ else
 end
 
 stop_if_cancelled(); h = waitbar(5/n_steps, h);
-pause(0.2), delete(h);
+pause(0.05); 
 
 %% Begin interactive configuration
 
@@ -322,6 +322,8 @@ while ~strcmp(config.state,'done')
   old_state = config.state;
     
   [config,handles] = splashScreen(config);
+  
+  if ishandle(h), delete(h); end
   
   switch old_state
     case {'welcome','welcome-download'}
@@ -601,7 +603,9 @@ switch command
                               'system. If you have already installed NEURON, please ' newline ...
                               'enter the path to your NEURON installation. If you ' newline ... 
                               'have not yet installed neuron, you should download ' newline ...
-                              'NEURON using the link below and install it now.'];
+                              'NEURON using the link below and install it now.' newline newline ...
+                              'When you have done so, please enter the path to ' newline ...
+                              'NEURON:'];
         config.neuron = '/path/to/neuron';
       else
         h.Children(9).Text = ['An installation of NEURON was found on your' newline ...
@@ -611,20 +615,23 @@ switch command
       end
       
       url = 'https://neuron.yale.edu/neuron/download';
+      if ispc, nrn_tgt = 'nrniv.exe'; 
+      else     nrn_tgt = 'nrniv';
+      end
       
       h.Children(7).Visible = 'off'; % dropdown
       
       h.Children(6).Value = config.neuron;
-      h.Children(6).Position = [15 390 360 26];
+      h.Children(6).Position = [15 350 360 26];
       h.Children(6).Visible = 'on';  % textedit
 
       h.Children(5).Text = 'browse';
-      h.Children(5).Position = [285 355 90 26];
-      h.Children(5).ButtonPushedFcn = @(~,~) browseFile(h.Children(6),'Select NEURON directory');
+      h.Children(5).Position = [285 318 90 26];
+      h.Children(5).ButtonPushedFcn = @(~,~) browseFile(h.Children(6),'Select NEURON directory',nrn_tgt);
       h.Children(5).Visible = 'on';  % button
 
-      h.Children(4).Text = 'NEURON installer (web)';
-      h.Children(4).Position = [15 355 262 26];
+      h.Children(4).Text = 'NEURON website (installer)';
+      h.Children(4).Position = [15 318 262 26];
       h.Children(4).ButtonPushedFcn = @(~,~) web(url,'-browser');      
       h.Children(4).Visible = 'on';  % button      
       
@@ -645,7 +652,8 @@ switch command
                               'system. If you have already downloaded EIDORS, please ' newline ...
                               'enter the path to your EIDORS toolbox. If you ' newline ... 
                               'have not yet downloaded EIDORS, you should download ' newline ...
-                              'EIDORS using the link below.'];
+                              'EIDORS using the link below.' newline newline ...
+                              'When you have done so, please enter the path to' newline 'EIDORS:'];
         config.eidors = '/path/to/eidors';
       else
         h.Children(9).Text = ['The EIDORS toolbox was found on your' newline ...
@@ -655,18 +663,19 @@ switch command
       end
       
       url = 'https://sourceforge.net/projects/eidors3d/';
+      eidors_tgt = 'eidors_startup.m';
       
       h.Children(6).Value = config.eidors;
-      h.Children(6).Position = [15 390 360 26];
+      h.Children(6).Position = [15 350 360 26];
       h.Children(6).Visible = 'on';  % textedit
 
       h.Children(5).Text = 'browse';
-      h.Children(5).Position = [285 355 90 26];
-      h.Children(5).ButtonPushedFcn = @(~,~) browseFile(h.Children(6),'Select EIDORS directory');
+      h.Children(5).Position = [285 318 90 26];
+      h.Children(5).ButtonPushedFcn = @(~,~) browseFile(h.Children(6),'Select EIDORS directory',eidors_tgt);
       h.Children(5).Visible = 'on';  % button
 
-      h.Children(4).Text = 'EIDORS toolbox';
-      h.Children(4).Position = [15 355 262 26];
+      h.Children(4).Text = 'EIDORS toolbox (download)';
+      h.Children(4).Position = [15 318 262 26];
       h.Children(4).ButtonPushedFcn = @(~,~) web(url,'-browser');      
       h.Children(4).Visible = 'on';  % button      
       
@@ -681,7 +690,8 @@ switch command
                               'system. If you have already installed GMSH, please ' newline ...
                               'enter the path to your GMSH installation. If you ' newline ... 
                               'have not yet installed neuron, you should download ' newline ...
-                              'GMSH using the link below and install it now.'];
+                              'GMSH using the link below and install it now.' newline newline ...
+                              'When you have done so, please enter the path to ' newline 'GMSH:'];
         config.gmsh = '/path/to/gmsh';
       else
         h.Children(9).Text = ['An installation of GMSH was found on your' newline ...
@@ -692,18 +702,23 @@ switch command
       
       url = 'https://gmsh.info';
       
+      if ispc, gmsh_exe = 'gmsh.exe'; 
+      else     gmsh_exe = 'gmsh';
+      end
+      
+      
       h.Children(6).Value = config.gmsh;
-      h.Children(6).Position = [15 390 360 26];
+      h.Children(6).Position = [15 350 360 26];
       h.Children(6).Visible = 'on';  % textedit
 
       h.Children(5).Text = 'browse';
-      h.Children(5).Position = [285 355 90 26];
-      h.Children(5).ButtonPushedFcn = @(~,~) browseFile(h.Children(6),'Select EIDORS directory');      
+      h.Children(5).Position = [285 318 90 26];
+      h.Children(5).ButtonPushedFcn = @(~,~) browseFile(h.Children(6),'Select GMSH',gmsh_exe);      
       h.Children(5).Visible = 'on';  % button
 
-      h.Children(4).Text = 'GMSH website';
-      h.Children(4).Position = [15 355 262 26];
-      h.Children(4).ButtonPushedFcn = @(~,~) web(url,'-browser');      
+      h.Children(4).Text = 'GMSH website (binary)';
+      h.Children(4).Position = [15 318 262 26];
+      h.Children(4).ButtonPushedFcn = @(~,~) web(url,'-browser');
       h.Children(4).Visible = 'on';  % button
       
       
@@ -745,8 +760,14 @@ switch command
                             'ViNERS was designed to work within a SPARC' newline ... 
                             'data structure (roughly based on the BIDS standard). ' newline ...
                             'ViNERS will now create /primary, /code, and /source in' newline ...
-                            'the installation directory:' newline newline config.install_path ];
+                            'the installation directory:' ];
       
+      h.Children(6).Visible = 'on'; % textedit
+      h.Children(6).Position = [15 330 360 26];
+      h.Children(6).Value = config.install_path; 
+      h.Children(6).Editable = false; % static text but copyable
+
+
       url = 'https://sparc.science/help/3FXikFXC8shPRd8xZqhjVT';
 
       h.Children(4).Text = 'more information about the SPARC data structure';
@@ -869,8 +890,10 @@ if isstruct(s), s = [s.folder filesep s.name];
 else s = strsplit(s,newline); s = s{1};
 end
 
-function browseFile(h,s)
-x = uigetdir(h.Value,s);
+function browseFile(h,label,stub)
+if nargin == 2, x = uigetdir(h.Value,label);
+else [~,x] = uigetfile(['*' stub],label,h.Value); 
+end
 if ischar(x), h.Value = x; end
 
 
