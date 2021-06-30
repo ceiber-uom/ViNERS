@@ -1,0 +1,27 @@
+
+SetFactory("OpenCASCADE");
+
+Point(1) = {-1.5, 0, 0, 0.2};
+Point(2) = {-0.5, 0, 0, 0.2};
+Point(3) = {0.5, 0, 0, 0.2};
+Point(4) = {1.5, 0, 0, 0.2};
+
+#IFDEF use_box 
+Box(1) = {-@[$box_len/2], -@[$box_width/2], -@[$box_width/2], ...
+             $box_len, $box_width, $box_width};
+#ENDIF
+
+#IFDEF use_sphere
+Sphere(1) = {0, 0, 0, $radius, -Pi/2, Pi/2, 2*Pi};
+#ENDIF
+
+// Rectangle(7) = {-4, -3, 0, 8, 6, 0};
+
+Point{4, 3, 2, 1} In Volume{1};
+
+// Point{4, 3, 2, 1} In Surface{7};
+// Surface{7} In Volume{1};
+
+Mesh.CharacteristicLengthMax = $exterior_len;
+Characteristic Length {4, 3, 2, 1} = $interior_len;
+

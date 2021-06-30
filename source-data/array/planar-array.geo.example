@@ -1,0 +1,183 @@
+
+SetFactory("OpenCASCADE");
+
+// Geometry of the outer box
+Box(1) = {-2.4, -0.8, -1.45,  4.8,     0.8,    2.9};
+Fillet{1}{2, 4, 6, 8}{0.3}
+
+Box(2) = {-2.5, -0.8, -3.95,  5, 0.3,  7.9};
+Fillet{2}{26, 28, 30, 32}{1}
+
+BooleanUnion{ Volume{1}; Delete; }{ Volume{2}; Delete; }
+
+// Execute electrode import script
+
+// Electrodes
+el = newv;
+Box(el) = {1.750,-0.200,-0.900,0.200,0.200,1.800};
+BooleanDifference{ Volume{1}; Delete; }{ Volume{el}; Delete; }
+Box(el) = {1.000,-0.200,-0.900,0.200,0.200,1.800};
+BooleanDifference{ Volume{1}; Delete; }{ Volume{el}; Delete; }
+Box(el) = {-1.200,-0.200,-0.900,0.200,0.200,1.800};
+BooleanDifference{ Volume{1}; Delete; }{ Volume{el}; Delete; }
+Box(el) = {-1.950,-0.200,-0.900,0.200,0.200,1.800};
+BooleanDifference{ Volume{1}; Delete; }{ Volume{el}; Delete; }
+
+
+Box(el+0) = {1.750,-0.200,-0.900,0.200,0.100,1.800};
+Box(el+1) = {1.000,-0.200,-0.900,0.200,0.100,1.800};
+Box(el+2) = {-1.200,-0.200,-0.900,0.200,0.100,1.800};
+Box(el+3) = {-1.950,-0.200,-0.900,0.200,0.100,1.800};
+
+vol_id = newv;
+Box(vol_id) = {-5.0,-2.0,-5.0, 10.0, 2.31, 10.0}; // Interstitial
+Box(vol_id+1) = {-5.0,0.31,-5.0, 10.0, 1.69, 10.0}; // Prostate
+
+BooleanDifference{ Volume{vol_id}; Delete; }{ Volume{1}; }
+BooleanDifference{ Volume{vol_id}; Delete; }{ Volume{el+0}; }
+BooleanDifference{ Volume{vol_id}; Delete; }{ Volume{el+1}; }
+BooleanDifference{ Volume{vol_id}; Delete; }{ Volume{el+2}; }
+BooleanDifference{ Volume{vol_id}; Delete; }{ Volume{el+3}; }
+
+Physical Volume("PDMS") = {1};
+Physical Volume("Interstitial") = {vol_id};
+Physical Volume("Prostate") = {vol_id+1};
+Physical Volume("Elec1") = {el+0};
+Physical Volume("Elec2") = {el+1};
+Physical Volume("Elec3") = {el+2};
+Physical Volume("Elec4") = {el+3};
+
+// vol_id = newv;
+// Box(vol_id) = {-5.0,-2.0,-5.0, 10.0, 2.31, 10.0}; // Interstitial
+// Box(vol_id+1) = {-5.0,0.31,-5.0, 10.0, 1.69, 10.0}; // Prostate
+
+// Execute spline script 
+
+// Splines (from Hulsebosch (1982) fig 2)
+lc = 0.020000; // mesh resolution
+
+// fascicle_1
+p = newp;
+Point(p+0) = {-5.0,0.205797,-0.059092, lc} ;
+Point(p+1) = {-5.0,0.207935,-0.079819, lc} ;
+Point(p+2) = {-5.0,0.196619,-0.096912, lc} ;
+Point(p+3) = {-5.0,0.178076,-0.106082, lc} ;
+Point(p+4) = {-5.0,0.157744,-0.111269, lc} ;
+Point(p+5) = {-5.0,0.140835,-0.101370, lc} ;
+Point(p+6) = {-5.0,0.121646,-0.102505, lc} ;
+Point(p+7) = {-5.0,0.102287,-0.104018, lc} ;
+Point(p+8) = {-5.0,0.095940,-0.086356, lc} ;
+Point(p+9) = {-5.0,0.104583,-0.067555, lc} ;
+Point(p+10) = {-5.0,0.111788,-0.048201, lc} ;
+Point(p+11) = {-5.0,0.127223,-0.034458, lc} ;
+Point(p+12) = {-5.0,0.143033,-0.020979, lc} ;
+Point(p+13) = {-5.0,0.162636,-0.015145, lc} ;
+Point(p+14) = {-5.0,0.177632,-0.028863, lc} ;
+Point(p+15) = {-5.0,0.193181,-0.042656, lc} ;
+Printf("Spline fascicle_1 : %g - %g", p, p+15) ;
+
+e = newreg;
+Spline(e) = {p,p+15,p+14,p+13,p+12,p+11,p+10,p+9,p+8,p+7,p+6,p+5,p+4,p+3,p+2,p+1,p} ;
+Curve Loop(e+1) = {e} ;
+Plane Surface(e+2) = e+1 ;
+su[] = Extrude{10.0,0,0}{ Surface{e+2}; };
+BooleanDifference{ Volume{vol_id}; Delete; }{ Volume{vol_id + 2}; }
+
+Physical Surface("P_Fascicle1") = {su[2]};
+Physical Volume("Fascicle1") = {vol_id + 2};
+
+// fascicle_2
+p = newp;
+Point(p+0) = {-5.0,0.117003,0.046273, lc} ;
+Point(p+1) = {-5.0,0.109235,0.023367, lc} ;
+Point(p+2) = {-5.0,0.093713,0.002832, lc} ;
+Point(p+3) = {-5.0,0.078098,-0.017481, lc} ;
+Point(p+4) = {-5.0,0.053503,-0.023719, lc} ;
+Point(p+5) = {-5.0,0.028269,-0.021371, lc} ;
+Point(p+6) = {-5.0,0.017138,-0.000149, lc} ;
+Point(p+7) = {-5.0,0.015495,0.025627, lc} ;
+Point(p+8) = {-5.0,0.016469,0.051083, lc} ;
+Point(p+9) = {-5.0,0.018101,0.076775, lc} ;
+Point(p+10) = {-5.0,0.018873,0.102351, lc} ;
+Point(p+11) = {-5.0,0.034338,0.123007, lc} ;
+Point(p+12) = {-5.0,0.057963,0.121030, lc} ;
+Point(p+13) = {-5.0,0.064373,0.096124, lc} ;
+Point(p+14) = {-5.0,0.074993,0.072742, lc} ;
+Point(p+15) = {-5.0,0.098612,0.064129, lc} ;
+Printf("Spline fascicle_2 : %g - %g", p, p+15) ;
+
+e = newreg;
+Spline(e) = {p,p+15,p+14,p+13,p+12,p+11,p+10,p+9,p+8,p+7,p+6,p+5,p+4,p+3,p+2,p+1,p} ;
+Curve Loop(e+1) = {e} ;
+Plane Surface(e+2) = e+1 ;
+su[] = Extrude{10.0,0,0}{ Surface{e+2}; };
+BooleanDifference{ Volume{vol_id}; Delete; }{ Volume{vol_id + 3}; }
+
+Physical Surface("P_Fascicle2") = {su[2]};
+Physical Volume("Fascicle2") = {vol_id + 3};
+
+// fascicle_3
+p = newp;
+Point(p+0) = {-5.0,0.061975,-0.093797, lc} ;
+Point(p+1) = {-5.0,0.054470,-0.106866, lc} ;
+Point(p+2) = {-5.0,0.045039,-0.118381, lc} ;
+Point(p+3) = {-5.0,0.033678,-0.128531, lc} ;
+Point(p+4) = {-5.0,0.020725,-0.122969, lc} ;
+Point(p+5) = {-5.0,0.015862,-0.108804, lc} ;
+Point(p+6) = {-5.0,0.014509,-0.093800, lc} ;
+Point(p+7) = {-5.0,0.018469,-0.079480, lc} ;
+Point(p+8) = {-5.0,0.027755,-0.067505, lc} ;
+Point(p+9) = {-5.0,0.035759,-0.054684, lc} ;
+Point(p+10) = {-5.0,0.049461,-0.048859, lc} ;
+Point(p+11) = {-5.0,0.064352,-0.047106, lc} ;
+Point(p+12) = {-5.0,0.079694,-0.044544, lc} ;
+Point(p+13) = {-5.0,0.086365,-0.056530, lc} ;
+Point(p+14) = {-5.0,0.080862,-0.070603, lc} ;
+Point(p+15) = {-5.0,0.072321,-0.082849, lc} ;
+Printf("Spline fascicle_3 : %g - %g", p, p+15) ;
+
+e = newreg;
+Spline(e) = {p,p+15,p+14,p+13,p+12,p+11,p+10,p+9,p+8,p+7,p+6,p+5,p+4,p+3,p+2,p+1,p} ;
+Curve Loop(e+1) = {e} ;
+Plane Surface(e+2) = e+1 ;
+su[] = Extrude{10.0,0,0}{ Surface{e+2}; };
+BooleanDifference{ Volume{vol_id}; Delete; }{ Volume{vol_id + 4}; }
+
+Physical Surface("P_Fascicle3") = {su[2]};
+Physical Volume("Fascicle3") = {vol_id + 4};
+
+// fascicle_4
+p = newp;
+Point(p+0) = {-5.0,0.178909,-0.006878, lc} ;
+Point(p+1) = {-5.0,0.163828,0.003689, lc} ;
+Point(p+2) = {-5.0,0.152403,0.018429, lc} ;
+Point(p+3) = {-5.0,0.133653,0.018906, lc} ;
+Point(p+4) = {-5.0,0.118750,0.029056, lc} ;
+Point(p+5) = {-5.0,0.129359,0.042895, lc} ;
+Point(p+6) = {-5.0,0.146531,0.038490, lc} ;
+Point(p+7) = {-5.0,0.165432,0.042217, lc} ;
+Point(p+8) = {-5.0,0.184272,0.044184, lc} ;
+Point(p+9) = {-5.0,0.201798,0.037225, lc} ;
+Point(p+10) = {-5.0,0.217084,0.026064, lc} ;
+Point(p+11) = {-5.0,0.231954,0.017975, lc} ;
+Point(p+12) = {-5.0,0.238811,0.000657, lc} ;
+Point(p+13) = {-5.0,0.229193,-0.012549, lc} ;
+Point(p+14) = {-5.0,0.213109,-0.022135, lc} ;
+Point(p+15) = {-5.0,0.195045,-0.016567, lc} ;
+Printf("Spline fascicle_4 : %g - %g", p, p+15) ;
+
+e = newreg;
+Spline(e) = {p,p+15,p+14,p+13,p+12,p+11,p+10,p+9,p+8,p+7,p+6,p+5,p+4,p+3,p+2,p+1,p} ;
+Curve Loop(e+1) = {e} ;
+Plane Surface(e+2) = e+1 ;
+su[] = Extrude{10.0,0,0}{ Surface{e+2}; };
+BooleanDifference{ Volume{vol_id}; Delete; }{ Volume{vol_id + 5}; }
+
+Physical Surface("P_Fascicle4") = {su[2]};
+Physical Volume("Fascicle4") = {vol_id + 5};
+ // ('','-blood','-epineurium')
+
+// Mesh.RemeshParametrization = 7;
+Mesh.CharacteristicLengthMax = 0.1;
+Mesh.CharacteristicLengthMin = 0.0005;
+Coherence; // Clean up rounding errors.

@@ -1,0 +1,22 @@
+
+// Index updated CDE 11 June 2021
+
+{ "list": [{
+    "entry":"rat-pelvic-nerve",          
+    "source":"R19_401L_ganglion_100X.tif", 
+    "doi":"",
+    "notes":"proximal to Major Pelvic Ganglion"
+  },{
+    "entry":"rat-cervical-vagus",
+    "source":"sub-17_sam-3_R17-3MergeMask.xml",
+    "doi":"https://doi.org/10.26275/ILB9-0E2A",
+    "notes":" 10.5 mm from cartoid bifurcation"
+  },{
+    "entry":"rat-abdominal-vagus",
+    "source":"sub-22_sam-1_R22-1MergeMask.xml",
+    "doi":"https://doi.org/10.26275/ILB9-0E2A",
+    "notes":"6 mm from esophageal hiatus, subdiaphragmatic"
+  }
+]}
+
+

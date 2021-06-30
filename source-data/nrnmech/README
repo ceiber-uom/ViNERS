@@ -1,0 +1,24 @@
+
+Spike Propagation through the Dorsal Root Ganglion
+----------------------------------------------------
+
+Sundt D, Gamper N, and Jaffe DB. Spike propagation through the dorsal
+root ganglia in an unmyelinated sensory neuron: a modeling study. J
+Neurophysiol. 2015 Dec 1;114(6):3140-53
+
+----------------------------------------------------
+
+cal.mod
+fpump.mpd
+im.mod
+kdr.mod
+kexternal.mod
+nadifl.mod
+nahh.mod
+SK.mod
+
+
+
+The other files are for Gaines2015. 
+
+Generate the .dll file using "mknrndll" (start menu works fine, or you'll need to use a bash shell)

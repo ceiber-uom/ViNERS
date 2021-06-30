@@ -1,0 +1,32 @@
+
+// Variable definition file generated using make_from_template
+//  at 28-Aug-2019 19:02:33
+
+#DEFINE statements
+
+// #9: #IFDEF use_box 
+use_box = true
+
+// #14: #IFDEF use_sphere
+use_sphere = false
+
+$variable names
+
+// #11: Box(1) = {-@[$box_len/2], -@[$box_width/2], -@[$box_width/2],  ... 
+box_len = 10 * [2:5]
+
+// #11: Box(1) = {-@[$box_len/2], -@[$box_width/2], -@[$box_width/2],  ... 
+box_width = 15 * [2:5]
+
+// #15: Sphere(1) = {0, 0, 0, $radius, -Pi/2, Pi/2, 2*Pi};
+radius
+
+// #25: Mesh.CharacteristicLengthMax = $exterior_len;
+exterior_len = 5
+
+// #26: Characteristic Length {4, 3, 2, 1} = $interior_len;
+interior_len = 0.01
+
+
+ // End variable definition file
+

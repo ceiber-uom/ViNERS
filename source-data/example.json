@@ -1,0 +1,46 @@
+
+// Example JSON input file specifying electrode array geometry - 9 April 2021
+
+{ "array": {
+    "Name": "BionicsInstitute-A",
+    "Template": "~/source/array/planar-array", // .geo .template file
+    "ElectrodePositions": [[-1.85,0,0],[-1.10,0,0],[1.10,0,0],[1.85,0,0]],
+    "ElectrodeDimensions": [0.2,0.1,1.8],
+    "ElectrodeTypeIndex": [1,1,1,1],     
+  }, 
+  "mesh": {
+    "MeshLengthMax": 0.2,
+    "DomainSize":[6,6,3,0.31], // mm
+  },
+  "nerve": {
+    "file": "~/source/nerve/rat-pelvic-nerve.xml",
+    
+    // compose synthetic pattern from fascicles in file
+    // For documentation about these configurations, see mesh.insert_gmsh_fascicles
+
+    // "pIndex":    [3, 1],
+    // "pLocation": [[0 100], [200 100]], // µm x y, y is electrode-nerve distance
+    // "pRotation": [0,0], // deg
+
+    // transform resulting pattern 
+    "xMove":  [0,120], // mm
+    "xScale":   [1 ,-1], // fascicles flipped upside down ... 
+    // "xRotate": -10, // deg
+
+    // peri-width
+    "Perineurium_mm": 0.003,
+    "MeshLengthFascicle": 0.015
+  },
+  "axons": {
+    "source":"pelvic-nerve", // rat pelvic nerve
+    "downsample": [5, 5, 5, 5], // for testing purposes.
+    "filename":"pelvic-axons"
+  }, 
+  "stimulation": { // default stimulus amplitudes
+    "downsample": [1, 1, 10, 10], // Recommended default for pelvic nerve 
+    "CL": "[0:10:250 255]",
+    "PW":  0.100,
+    "IPG": 0.050
+  }
+}
+

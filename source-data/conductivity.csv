@@ -1,0 +1,10 @@
+﻿Tissue,Alt Name,sigma_mho_per_m,rho_ohm_m,Reference
+Interstitial,,0.660,1.515,https://link.springer.com/article/10.1007/BF02474537
+Prostate,,0.4243,2.357,http://dx.doi.org/10.1109/TBME.2007.897331
+PDMS,,1.0E-12,1.0E+12,
+Fascicle[x],Along Fibre,0.570,1.754,Ranck (1965)
+Fascicle[y],Transverse,0.088,11.364,Ranck (1965)
+Fascicle[z],Transverse,0.088,11.364,Ranck (1965)
+P_Fascicle,,8.7E-04,1149.425,https://pubmed.ncbi.nlm.nih.gov/30507555/
+Epineurium,,0.083,12.048,Ranck (1965)
+Blood,,1.090,0.917,https://europepmc.org/article/pmc/pmc2914348

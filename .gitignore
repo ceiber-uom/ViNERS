@@ -1,0 +1,13 @@
+*.dll
+*.xlsx
+cache
+*.asv
+*.mat
+/+mesh/*.mat
+/+tools/*.mat
+
+octave-workspace
+/+tools/running.json
+*.o
+/source-data/nrnmech/*.c
+*.fig

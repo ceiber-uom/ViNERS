@@ -1,0 +1,21 @@
+
+// CONFIGURATION file generated 17-Jun-2021 19:06:57
+
+{ "env-list": [{
+    "name": "rdl-i84pz3.desktop.cloud.unimelb.edu.au",
+    "user": "ceiber",
+    "machine": "glnxa64",
+    "cache": "pn-mdl-%d/",
+    "gmsh": "/home/unimelb.edu.au/ceiber/.local/lib/python2.7/site-packages/gmsh-4.8.4-Linux64-sdk/bin/gmsh",
+    "neuron": "/home/unimelb.edu.au/ceiber/MATLAB/ViNERS/source/nrnmech/x86_64/special",
+    "eidors": "/home/unimelb.edu.au/ceiber/MATLAB/eidors/"
+  },{
+    "name": "THE-STREAM",
+    "user": "Calvin",
+    "machine": "win64",
+    "cache": "pn-mdl-%d/",
+    "gmsh": "C:/Program Files/GMSH 4.8.3/gmsh.exe",
+    "neuron": "C:/nrn/bin/nrniv.exe",
+    "eidors": "C:/Users/Calvin/Documents/MATLAB/Keast-lab/EIDORS/",
+    "toolbox-gsa": "null"  }]
+}
