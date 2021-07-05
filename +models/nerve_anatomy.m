@@ -533,7 +533,7 @@ if any(named('-regenerate')) || ~exist(PN_mesh('-thin.msh.mat'),'file')
   % use gmsh.exe to convert the .geo file to a .msh file:
   if ~exist(PN_mesh('.msh'),'file')  
     path_to_gmsh = tools.configuration('gmsh'); % 'C:\Program Files\gmesh\gmsh.exe';
-    system(sprintf('"%s" "%s" -3',path_to_gmsh,PN_mesh('.geo'))); 
+    system(sprintf('"%s" "%s" -format msh41 -3',path_to_gmsh,PN_mesh('.geo'))); 
   end
 
   if ~exist(PN_mesh('.msh'),'file')
