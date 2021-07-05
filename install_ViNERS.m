@@ -18,7 +18,7 @@ end
 
 function setup_ViNERS_on_unix
 
-h = waitbar(0, 'Gathering required information ...');
+h = waitbar(0, 'Gathering required ion ...');
 stop_if_cancelled = @() assert(ishandle(h), 'cancelled by user'); 
 p_ = @(x, varargin) [x.folder filesep x.name varargin{:}];
 s_ = @(varargin) system(sprintf(varargin{:}));
@@ -72,7 +72,7 @@ if not_found, config.git = [];
 else config.git = 'git';
 end
 
-config.install_path = pwd; 
+config.install_path = [pwd filesep 'ViNERS']; 
 
 stop_if_cancelled(); h = waitbar(4/n_steps, h);
 
@@ -121,7 +121,7 @@ while ~strcmp(config.state,'done')
   switch config.state
    case 'git pull viners' % download 
        
-    url = 'https://gitlab.unimelb.edu.au/lab-keast-osborne-release/viners';
+    url = gitlab_path;
     branch = 'ViNERS-master';
     
     if exist(config.install_path,'dir'), cd '..', pause(0.05)        
@@ -284,8 +284,7 @@ if not_found, config.git = [];
 else config.git = 'git';
 end
 
-config.install_path = pwd; 
-
+config.install_path = [pwd filesep 'ViNERS']; 
 stop_if_cancelled(); h = waitbar(4/n_steps, h);
 
 %% Parallel
@@ -353,7 +352,7 @@ while ~strcmp(config.state,'done')
    case 'git pull viners' % download 
        
 
-    url = 'https://gitlab.unimelb.edu.au/lab-keast-osborne-release/viners';
+    url = gitlab_path; 
     branch = 'ViNERS-master';
     
     if exist(config.install_path,'dir'), cd '..', pause(0.05)        
@@ -441,6 +440,24 @@ end
 fprintf('\n%s\n\n      ViNERS installation complete\n\n%s\n\n', ...
                 '='*ones(1,40), '='*ones(1,40))
 delete(handles(1).Parent)
+
+%%
+ 
+% // example CONFIGURATION file generated 11-Aug-2020 02:30:55
+% 
+% { "env-list": [{
+%     "name": "THE-STREAM",
+%     "user": "Calvin",
+%     "machine": "x64-based PC",
+%     "root": "C:\Users\Calvin\Documents\MATLAB\Keast-lab\oSPARC"
+%     "cache": "pn-mdl-%d/",
+%     "gmsh": "C:\Program Files\GMSH 4.8.3\gmsh.exe",
+%     "neuron": "C:\nrn\bin\nrniv.exe",
+%     "eidors": "C:\Users\Calvin\Documents\MATLAB\Keast-lab\EIDORS\eidors",
+%     "toolbox-gsa": "null"
+%   }]
+% }
+
 
 function [config,handles] = splashScreen(config,command,varargin)
 
@@ -554,16 +571,14 @@ switch command
     return
       
   case 'manual-unzip'
-      
-    url = 'https://gitlab.unimelb.edu.au/lab-keast-osborne/pelvic-nerve-model';
-      
+            
     h.Children(9).Text = ['Automatic download failed, please download ViNERS from ' newline ...
                           'GitLab into ' config.install_path];
     h.Children(8).Position(3) = 600;
     
     h.Children(5).Text = 'open ViNERS on GitLab';
     h.Children(5).Position = [15 425 360 26];
-    h.Children(5).ButtonPushedFcn = @(~,~) web(url,'-browser');
+    h.Children(5).ButtonPushedFcn = @(~,~) web(gitlab_path,'-browser');
     h.Children(5).Visible = 'on';  % button
     
     
@@ -855,7 +870,7 @@ switch command
                             'and have a look at the examples. Good luck and ' newline ...
                             'may your simulations reflect reality.'];
           
-      url = 'https://gitlab.unimelb.edu.au/lab-keast-osborne-release/viners/-/wikis/home';
+      url = gitlab_path('/-/wikis/home');
 
       h.Children(4).Text = 'more information about ViNERS';
       h.Children(4).Position = [15 255 360 26];
@@ -895,9 +910,6 @@ if nargin == 2, x = uigetdir(h.Value,label);
 else [~,x] = uigetfile(['*' stub],label,h.Value); 
 end
 if ischar(x), h.Value = x; end
-
-
-
 
 function apt_install(h,command)
 
@@ -940,23 +952,6 @@ end
 
 return
 
-
-
-%%
-% 
-% 
-% // example CONFIGURATION file generated 11-Aug-2020 02:30:55
-% 
-% { "env-list": [{
-%     "name": "THE-STREAM",
-%     "user": "Calvin",
-%     "machine": "x64-based PC",
-%     "root": "C:\Users\Calvin\Documents\MATLAB\Keast-lab\oSPARC"
-%     "cache": "pn-mdl-%d/",
-%     "gmsh": "C:\Program Files\GMSH 4.8.3\gmsh.exe",
-%     "neuron": "C:\nrn\bin\nrniv.exe",
-%     "eidors": "C:\Users\Calvin\Documents\MATLAB\Keast-lab\EIDORS\eidors",
-%     "toolbox-gsa": "null"
-%   }]
-% }
-% 
+function p = gitlab_path(varargin)
+p = 'https://gitlab.unimelb.edu.au/lab-keast-osborne-release/ViNERS';
+p = strcat(p,varargin{:});
