@@ -635,7 +635,7 @@ elseif contains(nrn_out,'abort THRESHOLD_LOW')
 elseif contains(nrn_out,'abort THRESHOLD_HIGH')
     result(1:2) = [Inf NaN]; 
     log_error(thread_id,index,'high_threshold',vars,nrn_out);
-    fprintf('[%c[%03d] abort THRESHOLD_HIGH]%c\n', char(8), index, char(8))
+    fprintf('[%c[%03d] warning THRESHOLD_HIGH ]%c\n', char(8), index, char(8))
 else
     log_error(thread_id,index,'bad_model',vars,nrn_out);
     fprintf('[%c[%03d] model failure]%c\n', char(8), index, char(8))
@@ -906,6 +906,9 @@ save(cache_file,'-struct','f')
 return
 
 function log_error(tid,iid,eid,vars,nrn_out)
+
+named = evalin('caller','named');
+if ~any(named('-log-e')), return, end
 
 e_file = tools.file('sub~/axons/err-logs/');
 if ~exist(e_file,'dir'), mkdir(e_file), end
