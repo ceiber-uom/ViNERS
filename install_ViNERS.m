@@ -573,7 +573,9 @@ switch command
   case 'manual-unzip'
             
     h.Children(9).Text = ['Automatic download failed, please download ViNERS from ' newline ...
-                          'GitLab into ' config.install_path];
+                          'GitLab into ' config.install_path newline ...
+                          'I recommend cancelling this installer and running ' newline ...
+                          'the installer packaged in the downloaded .zip file.'];
     h.Children(8).Position(3) = 600;
     
     h.Children(5).Text = 'open ViNERS on GitLab';
