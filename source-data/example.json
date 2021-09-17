@@ -10,7 +10,7 @@
   }, 
   "mesh": {
     "MeshLengthMax": 0.2,
-    "DomainSize":[6,6,3,0.31], // mm
+    "DomainSize":[6,6,3], // mm
   },
   "nerve": {
     "file": "~/source/nerve/rat-pelvic-nerve.xml",
