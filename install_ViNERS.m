@@ -7,6 +7,8 @@ set(0,'ShowHiddenHandles','off')
 splashScreen('reset'); % reset
 
 diary('ViNERS-installation.log')
+fprintf('ViNERS installation %s\n', datestr(now))
+
 done = onCleanup(@() diary('off'));
 
 if ismac, setup_ViNERS_on_mac
@@ -466,7 +468,7 @@ if ischar(config), h = []; return, end
 if isempty(h)
     %%
     h = uifigure('Position',[300 340 780 600]);
-    axes('Parent',h,'Position',[0.52 0.1 0.46 0.8]);
+    uiaxes('Parent',h,'Position',[400 60 360 480],'Color','none');
     imagesc((config.img + 0.3)/1.3,'Parent',h.Children(end));
     axis(h.Children,'image','off');
     
@@ -605,7 +607,9 @@ switch command
       
       if config.needs_PCT, lost = [lost newline 'MATLAB Parallel Computing Toolbox']; end
       
-      if ~isempty(lost), lost = [newline newline 'The following need to be installed:' lost]; end
+      if ~isempty(lost), lost = [newline newline 'The following were not located on your system. ' newline ...
+                                   'This may be because they have yet to be installed, ' newline ...
+                                   'or were installed to an unusual location:' lost newline]; end
       if ~isempty(found), found = ['The following were already located on your system:' found]; end
       
       h.Children(9).Text = [found lost];
@@ -667,8 +671,9 @@ switch command
       if isempty(config.eidors), state{1} = 'get-EIDORS';
         h.Children(9).Text = ['The EIDORS toolbox for MATLAB was not found on your' newline ...
                               'system. If you have already downloaded EIDORS, please ' newline ...
-                              'enter the path to your EIDORS toolbox. If you ' newline ... 
-                              'have not yet downloaded EIDORS, you should download ' newline ...
+                              'enter the path to your EIDORS toolbox (specifically, the ' newline ...
+                              '"eidors_startup.m" file, located in the /eidors/ directory).' newline 
+                              'If you have not yet downloaded EIDORS, you should download ' newline ...
                               'EIDORS using the link below.' newline newline ...
                               'When you have done so, please enter the path to' newline 'EIDORS:'];
         config.eidors = '/path/to/eidors';
