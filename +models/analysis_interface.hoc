@@ -98,6 +98,7 @@ proc setup_block() {
   	output_mode = 4 // this is otherwise the same as output_mode 4
   } else if (output_mode == 6) { f.printf("\nBEGIN VClamp_current { t v[%g] i[%g] ", VC_nodeID, VC_nodeID)
   } else if (output_mode == 7) { f.printf("\nBEGIN VClamp_extrema { t_min i[%g]_min t_max i[%g]_max", VC_nodeID, VC_nodeID)
+  } else if (output_mode == 8) { f.printf("\nBEGIN node_memcurrent { t v[%g] i[%g]", VC_nodeID, VC_nodeID)
   } else { printf("setup_block called with unknown output_mode %d\n",output_mode) }
 }
 
@@ -112,13 +113,13 @@ proc output_block() { // called on each time-step by advance()
   if (output_mode == 3) { f.printf("\n%g\t",t)  // ALL (vm + im) requested
     forall {
       // i_membrane(0.5) gives the current density in mA / cm2
-      // area is PI*diam*L in µm² and is given by area(0.5)
+      // area is PI*diam*L in um2 and is given by area(0.5)
 
 
       f.printf("%g\t",v(0.5))
       
 	  // Compute membrane current
-	  // (mA/cm²)(µm²) = 1e-11 A 
+	  // (mA/cm^2)(um^2) = 1e-11 A 
       f.printf("%g\t",i_membrane(0.5) * area(0.5) / 100) // in nA
 
       if ( (v(0.5) > AP_threshold) && (AP_time < 0) && (t >= delay) ) {
@@ -137,13 +138,23 @@ proc output_block() { // called on each time-step by advance()
 
   if (output_mode == 6) { // output_mode = 6 (VClamp full wave)
 
-	f.printf("\n%g\t",t)  // ALL (vm + im) requested
+  	f.printf("\n%g\t",t)  // ALL (vm + im) requested
 
-	node[VC_nodeID] {
+	  node[VC_nodeID] {
       f.printf("%g\t",v(0.5))
       f.printf("%g", distalstim.i)
-	}
+	  }
   	return
+  }
+  if (output_mode == 8) { // output_mode = 6 (as 3 but only select node)
+
+    f.printf("\n%g\t",t)  // ALL (vm + im) requested
+
+    node[VC_nodeID] {
+      f.printf("%g\t",v(0.5))
+      f.printf("%g",i_membrane(0.5) * area(0.5) / 100) // in nA
+    }
+    return
   }
 
   if (output_mode == 7 && (t > delay)) {
@@ -172,6 +183,7 @@ proc output_block() { // called on each time-step by advance()
 
   	  if (output_mode == 4) { // minimal output requested
 	  	  if (stim_amp == 0)  {         f.printf("\n%0.8f\t%0.8f\t%s", distalstim.amp, AP_time, secname())
+        } else if (multiple_stim_amp == 1) { f.printf("\n%0.8f\t%0.8f\t%s", stim_amp, AP_time, secname())
 	  	  } else if (distalstim.amp == 0) { f.printf("\n%0.8f\t%0.8f\t%s", stim_amp, AP_time, secname())
 	  	  } else {		 f.printf("\n%0.8f\t%0.8f\t%0.8f\t%s", stim_amp, distalstim.amp, AP_time, secname()) }
       }
@@ -225,12 +237,16 @@ proc find_threshold_external() { localobj bounds
   bounds = new Vector()
   bounds.append($2,$3)  
   stim_amp = $1
-  distalstim.amp = 0
+  if (multiple_stim_amp == 0) {
+    distalstim.amp = 0  // nA //
+  }
 
   while ( (bounds.x[1] - bounds.x[0]) / bounds.x[1] > 0.01 ) {
 
+    if (multiple_stim_amp == 1) { distalstim.x[0] = stim_amp } // hacky
+
   	t = 0
-	AP_time = -1
+	  AP_time = -1
     run()
 
     if (AP_time == -1) { // no spike detected 
@@ -324,7 +340,11 @@ proc find_threshold_internal() { localobj bounds
 proc run_stim() { // uA external, nA internal
 
   stim_amp = $1        // usually uA //
-  distalstim.amp = $2  // nA //
+  if (multiple_stim_amp == 0) {
+    distalstim.amp = $2  // nA //
+  } else {
+    distalstim.x[0] = stim_amp
+  }
 
   if (output_mode == 0) {
   	if ($1 == 0) { output_mode = 3   // Im + Vm output
@@ -344,7 +364,6 @@ proc run_stim() { // uA external, nA internal
 } // proc
 
 proc run_multi_amplitude_sweep() { 
-
 
   setup_file() // open new file
   f.printf("\n// running run_stim_sweep() using")
@@ -416,7 +435,7 @@ proc run_stim_sweep() { localobj fi,lvl
     lvl.scanf(fi) // read in a second time as a matrix this time
     fi.close()
 
-	multiple_stim_amp = 1
+	  multiple_stim_amp = 1
   }  
 
   if (output_mode == 0) output_mode = 1 // default: spikes
@@ -441,7 +460,7 @@ proc run_stim_sweep() { localobj fi,lvl
 
     stim_amp = lvl.x[pp]
     printf("stimulus = %0.1f\n",stim_amp)
-	f.printf("\n// stimulus = %0.4f \n",stim_amp)
+	  f.printf("\n// stimulus = %0.4f \n",stim_amp)
     setup_block()
     
     // cvode.event(0, "set_e_ext(0)")
@@ -467,7 +486,33 @@ proc run_stim_sweep() { localobj fi,lvl
 } // proc
 
 
+proc setup_multi_pulse_threshold() { localobj fi,lvl
 
+  fi = new File()
+  lvl = new Matrix()
+
+  // reusing stim_filename from before  
+  sprint(stim_filename, "%s/stimulus-levels_%d.dat",cache_path,thread_id)
+  fi.ropen(stim_filename)
+  lvl.scanf(fi) // read in a second time as a matrix this time
+  fi.close()
+
+  multiple_stim_amp = 1
+
+  printf("Amplitudes r=%g c=%g Matrix\n",lvl.nrow,lvl.ncol)
+  printf("Using row 1 as static pulse\n")
+  // printf("This won't work in combination with _internal")
+
+  distalstim = lvl.getcol(0)
+  delay = $1
+
+  printf("Setting delay term to %g ms\n", delay)
+
+  printf("[debug] distalstim.x[0]=%g\n", distalstim.x[0])
+  printf("[debug] distalstim.x[1]=%g\n", distalstim.x[1])
+
+
+}
 
 
 proc run_VoltageClamp() { localobj fi,lvl 
@@ -578,19 +623,21 @@ proc set_e_ext() { localobj field
 
       if (multiple_stim_amp) {
 
-      	field = stim_pattern.getrow($1-1)
-		field = field.mul(distalstim) // this is hacky, using this object as 
-		field = stim_volt.o(s_type).mulv(field)
+        field = stim_pattern.getrow($1-1)
+        // this is hacky, reusing this object as vector
+        field = field.mul(distalstim)
+        
+        field = stim_volt.o(s_type).mulv(field)        
+        for i=0,axon.o(s_type).count()-1  { 
+          axon.o(s_type).o(i).sec().e_extracellular = field.x[i]
+        }
 
-		for i=0,axon.o(s_type).count()-1  { 
-	   		axon.o(s_type).o(i).sec().e_extracellular = field.x[i]
-	    }
       } else {
-	   	field = stim_volt.o(s_type).mulv(stim_pattern.getrow($1-1))
-	   	for i=0,axon.o(s_type).count()-1  { 
-	   		axon.o(s_type).o(i).sec().e_extracellular = field.x[i] * stim_amp 
-	    }
-	  }
+        field = stim_volt.o(s_type).mulv(stim_pattern.getrow($1-1))
+        for i=0,axon.o(s_type).count()-1  {
+          axon.o(s_type).o(i).sec().e_extracellular = field.x[i] * stim_amp 
+        }
+      }
     }
 
     sprint(next_event, "set_e_ext(%d)",$1+1)

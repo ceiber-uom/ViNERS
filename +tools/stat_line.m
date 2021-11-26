@@ -22,15 +22,19 @@ if nargin > 1
   d1 = reshape(d1(~isnan(d1)), [], 1);
   d2 = reshape(d2(~isnan(d2)), [], 1); 
   
-  pair_ = @(f) [f(d1); f(d2)];
+  pair_ = @(f) [f(d1)  f(d2)];
   
   s = struct;
   if nargin > 2, s.info = dtext; end
   s.n = pair_(@numel);
+  
+  nanskew = @(x) skewness(x(~isnan(x))); 
+  
 
   s.avg = pair_(@nanmean);
   s.std = pair_(@nanstd);
   s.median = pair_(@nanmedian);
+  s.skew = pair_(nanskew);
  
   s.sem = s.std ./ sqrt(s.n); 
 

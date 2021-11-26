@@ -18,7 +18,8 @@ function nerve_anatomy (varargin)
 % -regenerate: if set, the mesh is regenerated even if
 %              tools.cache('path')/pelvic_nerve-thin.msh.mat exists. 
 % -mesh:     generate mesh only and exit without running EIDORS. 
-% -fascicle: which fascicles from file get simulated (default: 1-5) 
+% -template: which overall array design (.geo.template) file to simulate?
+% -fascicle: which fascicles from file get simulated (default: all) 
 % -stimulus: compute the electrode-tissue relationship for electrical 
 %            stimuli (if not set, this code computes recording sensitivity)
 %     -mono: if set, stimuli are monopolar (default: sequential bipoles)
@@ -44,6 +45,18 @@ e = get_input_structure(varargin{:});
 if any(named('-out')), output_name = get_('-out');
 elseif isfield(e,'output'), output_name = e.output;
 else output_name = ''; 
+end
+
+if any(named('-fwd-model')), % expose "build_forward_model"
+  % set up non-homogenous anisotropic conductivity
+  fmdl = build_forward_model(get_('-fwd-model'), get_, named); 
+  assignin('caller','fmdl',fmdl);
+  return
+end
+
+if any(named('-get-sigma'))
+  sigma = build_forward_model; % get default sigma values
+  assignin('caller','default_sigma',sigma)
 end
 
 % if output_name exists but does not end in .mat: 
@@ -82,7 +95,7 @@ m.electrode(cellfun(@isempty,{m.electrode.name})) = [];
 nE = numel(m.electrode);
 
 clf, show_fem(m), hold on
-h = get(gca,'Children'); 
+h = findobj(gca,'type','patch'); 
 set(h,'EdgeAlpha',0.3)
 set(h,'FaceAlpha',0.1)
 
@@ -95,6 +108,11 @@ obj_idx_ = @(n) unique( m.elems(cat(1,m.object_id{contains(m.object_name,n)}),:)
 if any(named('-fasc'))
      fascicle_list = get_('-fasc');
 else fascicle_list = 1:sum(strncmp(m.object_name,'Fascicle',8)); 
+end
+
+if isempty(fascicle_list), 
+    warning('ViNERS:noFascicles','No fascicles were found in mesh.')
+    fascicle_list = 0;
 end
 
 for f_id = fascicle_list % Each fascicle, broken into chunks. 
@@ -117,6 +135,9 @@ for f_id = fascicle_list % Each fascicle, broken into chunks.
     else n_chunk = round(numel(idx)/chunk_size);
          chunk_size = ceil(numel(idx)/n_chunk);
     end
+    
+    if isempty(idx_full) && f_id == 0, idx_full = 1; end
+    
     
     %% CORE loop (only relevent if -direct set)
     for chunk = 1:max(1,ceil(numel(idx_full) / chunk_size))
@@ -176,14 +197,8 @@ for f_id = fascicle_list % Each fascicle, broken into chunks.
         %% Set conductivities and run model
         
         fprintf('Running field simulation [%s chunk %d] ... \n', fascicle_id, chunk)
-        if any(named('-sigma')) % Import volume conductivities from fitted transimpedance data
-             em = build_forward_model(m,get_('-sigma')); % use custom anisotropic conductivities
-        else em = build_forward_model(m); % set up non-homogenous anisotropic conductivity
-        end 
         
-        if any(named('-eit-model')) % Import volume conductivities from fitted transimpedance data
-            em = import_fitted_conductivities(em, get_('-eit-model')); % set up non-homogenous anisotropic conductivity
-        end
+        em = build_forward_model(m, get_, named); % build forward model with options controlled by user input
         
         if exist('elem_data_isotropic','var')
             em.elem_data = elem_data_isotropic;
@@ -218,18 +233,25 @@ for f_id = fascicle_list % Each fascicle, broken into chunks.
            m.name = 'Extracellular potential simulation';
            info = e;
            model = m;
+           if any(named('-save-fmdl')), model = em; end
+
            v_extracellular = v_meas;
+           fprintf('Saving %s\n', output_name)
            save(output_name,'info','model','v_extracellular')
            
-           if ~any(named('-direct')) && ~any(named('-stimulus'))           
+           if ~any(named('-direct')) && ~any(named('-stimulus'))
              % see https://en.wikipedia.org/wiki/Reciprocity_(electromagnetism)#Reciprocity_for_electrical_networks
                result.info = e;
                result.model = m;
+               
+               if any(named('-save-fmdl')), result.model = em; end
                result.v_extracellular = v_meas;
                result = convert_stim2fascicles(result); 
                result = rmfield(result,'v_extracellular');
                  
                output_name = strrep(output_name,'stimulus','sensitivity');
+               fprintf('Saving %s\n', output_name)
+               
                save(output_name,'-struct','result');     
            end
            
@@ -239,6 +261,7 @@ for f_id = fascicle_list % Each fascicle, broken into chunks.
           v_meas = fwd_solve(em); % solve EIDORS electric field simulation
           v_meas = reshape(v_meas.meas,nE,[]);        
           disp('Saving to "eidors-im_pot.mat" ... ')
+          
           save(tools.file('get',tools.cache('PATH', ... 
                           'eidors-im_pot_%s_chunk%02d (%%d).mat'), ... 
                           'next',fascicle_id,chunk),'m','v_meas')
@@ -265,7 +288,7 @@ end
 
 return % everything after this is visualisation
 
-%%
+%% Validation figure (1)
 figure(1) %#ok<UNRCH>
 clf, show_fem(m), hold on
 
@@ -375,6 +398,7 @@ if ~isfield(e,'Perineurium_mm')
 end
 
 if ~any(named('-no-cache'))
+    fprintf('Saving e to [cache] elec-geom.mat\n')
     save(tools.cache('path','elec-geom.mat'),'-struct','e')
 end
 
@@ -495,7 +519,7 @@ function m = generate_nerve_mesh(get_,named, e)
 PN_mesh = tools.cache('PATH','nerve+array'); 
 PN_mesh = @(ext)[PN_mesh ext]; % output file
 
-if any(named('-regenerate')) || ~exist(PN_mesh('-thin.msh.mat'),'file')
+if any(named('-regenerate')) || ~exist(PN_mesh('-thin.mdl.mat'),'file')
 
   if any(named('-template')), geo_template = get_('-template');
   elseif isfield(e,'array') && isfield(e.array,'Template')
@@ -517,6 +541,10 @@ if any(named('-regenerate')) || ~exist(PN_mesh('-thin.msh.mat'),'file')
   
   make_opts = {'-usev','-output',PN_mesh('.geo'), ...
                   'virtual_thinlayer','exterior_len',e.MeshLengthMax};
+  if isfield(e,'array') && isfield(e.array,'carrier') % case-sensitive
+      more_opts = tools.opts_to_args(e.array,'carrier','--s2a-keep');
+      make_opts = [make_opts more_opts];
+  end
   
   if any(named('-make-o')), more_opts = get_('-make-o');
     if ~iscell(more_opts), more_opts = {more_opts}; end
@@ -550,13 +578,18 @@ if any(named('-regenerate')) || ~exist(PN_mesh('-thin.msh.mat'),'file')
   fprintf('Elapsed time is %.0f:%02.3f\n', floor(toc(t)/60), mod(toc(t),60))  
 else
   warning('ViNERS:existing_mat_file', ...
-                 'Using existing mat file (%s). %s', PN_mesh('-thin.msh.mat'), ...
+                 'Using existing mat file (%s). %s', PN_mesh('-thin.mdl.mat'), ...
                  'If this is not intended, call tools.cache(''reset'')')
   
-  m = load(PN_mesh('-thin.msh.mat'));
+  m = load(PN_mesh('-thin.mdl.mat'));
 end
   
 m.boundary_numbers = ones(size(m.boundary(:,1)));
+
+if any(named('-customi')), custom_fun = get_('-customi'); 
+    warning('ViNERS:custom_model','applying custom model code: %s', func2str(custom_fun))
+    m = custom_fun(m); 
+end
 
 %% Add internal electrodes to model 
 function m = configure_array_electrodes(m)
@@ -565,7 +598,7 @@ function m = configure_array_electrodes(m)
 
 if ~isfield(m,'electrode') % Find electrode in model and 
                            % eliminate corresponding elements 
-    % Electrodes already exist as voids, dig them out here. 
+    % Electrodes already exist as voids, dig them out here.     
     error('Locate electrode voids code removed from an older version')
 end
 
@@ -642,6 +675,22 @@ if any(indeg == 0)
     m.electrode(ii).nodes = reindex(m.electrode(ii).nodes);
   end
 end
+
+%% NEW: optional point electrodes
+
+named = evalin('caller','named');
+if any(named('-point-e'))
+    get_ = evalin('caller','get_');
+    point_electrodes = get_('-point-e');
+    for ii = 1:size(point_electrodes,1)
+       [~,idx] = min( sum((m.nodes - point_electrodes(ii,:)).^2,2));        
+        m.nodes(idx,:) = point_electrodes(ii,:);
+        m.electrode(end+1) = m.electrode(end);
+        m.electrode(end).nodes = uint32(idx);
+        m.electrode(end).name = sprintf('PtElec%d', ii);
+    end
+end
+
 
 %% Verification pattern
 function m = mk_verification_pattern(m) % IN-CONTEXT function
@@ -847,11 +896,13 @@ end
 return
 
 %% use EIDORS.mk_image and fill in sigma values from the literature
-function em = build_forward_model(fmdl,sigma)
+function em = build_forward_model(fmdl,get_,named)
 
-% TODO - refactor this to load from the table in /source/ 
 
-if ~exist('sigma','var')
+if nargin == 3 && any(named('-sigma')), sigma = get_('-sigma');
+else 
+  % TODO - refactor this to load from the table in /source/ 
+  % if ~exist('sigma','var')
     sigma(1).name = 'Interstitial';
     sigma(2).name = 'Prostate';      % 0.4243 S/m % http://dx.doi.org/10.1109/TBME.2007.897331
     sigma(3).name = 'PDMS';          % [materials properties] 
@@ -893,7 +944,7 @@ if ~exist('sigma','var')
 % nerve cuff electrodes" IEEE Trans Biomed Eng (2001). 
     
 end
-if ~exist('fmdl','var'), em = sigma; return, end
+if nargin == 0, em = sigma; return, end
 
 em = mk_image(fmdl, 0.66);
 
@@ -918,6 +969,11 @@ for ii = 1:length(sigma)
   end
 end
 
+
+if any(named('-eit-model')) % Import volume conductivities from fitted transimpedance data
+    em = import_fitted_conductivities(em, get_('-eit-model')); % set up non-homogenous anisotropic conductivity
+end
+
 % Check that every element has an assigned conductivity
 done = any(em.elem_data(:,:,:),3);
 if ~all(done)
@@ -925,6 +981,63 @@ if ~all(done)
     error('%d of %d tets have undefined conductivities', ...
         sum(~done), length(done))
 end
+
+        
+%% Import fitted inverse_model conductivities 
+function em = import_fitted_conductivities(em, eit)
+
+if isfield(eit,'node_data') && isfield(eit,'fwd_model')
+  % possible reduced version, but OK to use
+elseif ~isfield(eit,'elem_data')
+  warning('build_forward_model:cannotImport','EIT image is missing field ''elem_data'', ignoring... ')
+  return
+elseif ~isfield(eit,'fwd_model')
+  warning('build_forward_model:cannotImport','EIT image is missing field ''fwd_model'', ignoring... ')
+  return  
+else
+  
+  node_sigma = 0*eit.fwd_model.nodes(:,1); 
+  node_ntris = 0*eit.fwd_model.nodes(:,1); 
+
+  for ii = 1:size(eit.fwd_model.elems,1)
+    idx = eit.fwd_model.elems(ii,:);
+    node_sigma(idx) = node_sigma(idx) + eit.elem_data(ii); 
+    node_ntris(idx) = node_ntris(idx) + 1; 
+  end
+
+  node_sigma = node_sigma ./ node_ntris;
+  eit.node_data = node_sigma;
+  
+end
+
+disp('Importing background sigma from eit.node_data')
+fprintf('   "%s" ...\n', eit.fwd_model.name)
+
+
+sigma_inhomog = scatteredInterpolant(eit.fwd_model.nodes, eit.node_data);
+sigma_inhomog.ExtrapolationMethod = 'nearest'; 
+
+do_objects = strcmp(em.fwd_model.object_name,'Interstitial') | ...
+             strcmp(em.fwd_model.object_name,'Prostate');
+
+for oc = find(do_objects)
+
+  idx = em.fwd_model.object_id{oc};
+  
+  x = reshape(em.fwd_model.nodes(em.fwd_model.elems(idx,:),1),[],4);
+  y = reshape(em.fwd_model.nodes(em.fwd_model.elems(idx,:),2),[],4);
+  z = reshape(em.fwd_model.nodes(em.fwd_model.elems(idx,:),3),[],4);
+  
+  s = mean(sigma_inhomog(x,y,z),2); 
+  
+  em.elem_data(idx,1,1,1) = s; 
+  em.elem_data(idx,1,2,2) = s; 
+  em.elem_data(idx,1,3,3) = s; 
+end
+
+
+
+
 
 %% Quick mesh visualisation
 function preview_eidors_mesh(m,do_animate)

@@ -1,8 +1,18 @@
 
 function view_wave_raster(varargin)
+% function view_wave_raster(filename, varargin)
+% 
 % This function generates the invididual panels for EMBC fig. 3
+% 
+% Options: 
+%  filename = '?' : use UI file picker (default if nargin = 0)
+% -ax [axon_file] : use specified axon file (default: newest)
+% -roi [xlim]     : set ROI for display
+% -fascicle [#]   : filter fascicles (default: sum over all)
+% -dy [delta µV]  : set Y offset for display
+% 
+% V0.2 CDE 18 Nov 2021
 
-% TODO - documentation needs to go here. 
 
 named = @(v) strncmpi(v,varargin,length(v)); 
 get_ = @(v) varargin{find(named(v))+1};
@@ -28,6 +38,8 @@ load(ax_file,'pop');
 D.axontype = D.options.class;
 D.axon_color = cat(1,pop.color);
 % TODO - set electrode grid, plot opts for raster, types
+if any(named('-pop-col')), D.axon_color = get_('-pop-col'); end
+
 
 if iscell(D.raster), D.raster = [D.raster{:}]; end
 
@@ -52,13 +64,22 @@ for ii = 1:numel(D.axontype)
       if isempty(spk_time), continue, end,       
       spk_time(:,2) = []; spk_axon(:,2) = []; 
     else
-      spk_time = D.raster{ii}.spk_time;
-      spk_axon = D.raster{ii}.spk_axon;
+      spk_time = D.raster(ii).spk_time;
+      spk_axon = D.raster(ii).spk_axon;
     end
-        
+    
     ok = (spk_time >= t_roi(1) & spk_time < t_roi(end));
-    plot(spk_time(ok), spk_axon(ok) + z0,'.','Color', D.axon_color(ii,:))
-    z0 = z0 + length(D.raster(ii).axon_group);       
+
+    if any(named('-raster-o')), 
+      axon_y = get('-raster-o'); 
+      z_increment = nanmax(axon_y);
+      axon_y = axon_y(spk_axon(ok));       
+    else axon_y = spk_axon(ok);
+      z_increment = length(D.raster(ii).axon_group);
+    end
+    
+    plot(spk_time(ok), axon_y + z0,'.','Color', D.axon_color(ii,:))
+    z0 = z0 + z_increment;
 end
 
 tools.tidyPlot, set(gca,'YTick',[],'TickLength',[1 1]/150), xlim(t_roi)
@@ -73,20 +94,44 @@ if size(D.waves,4) > 1
    
   if any(named('-f')), fid = get_('-f'); else fid = 1:size(D.waves,3); end
   D.waves = permute(sum(D.waves(:,:,fid,:),3),[1 2 4 3]);
-    
 end
 
+
+elec = [1 2; 3 4]; 
+
+if any(named('-elec')), elec = get_('-elec');
+elseif any(named('-chan')), elec = get_('-chan');
+elseif any(named('-pair')), elec = get_('-pair');
+end
+ 
+  
 
 subplot(3,1,2), cla, hold on
 style = {'linewidth',1.1,'color'};
 C = lines(7); G = @(v) [v v v]/10; %#ok<NASGU>
 
 ok = (D.time > t_roi(1)& D.time < t_roi(end));
-plot(D.time(ok),dy+sum(D.waves(ok,3,:) - D.waves(ok,4,:),3),style{:},G(5))
-plot(D.time(ok),sum(D.waves(ok,1,:) - D.waves(ok,2,:),3),style{:},G(2))
 
-for ii = 1:numel(D.axontype)
-  plot(D.time(ok),D.waves(ok,1,ii)-D.waves(ok,2,ii)-dy*ii,style{:},D.axon_color(ii,:))
+if size(elec,2) > 1
+     get_wave_ = @(w,e) sum(w(:,e(1),:) - mean( ...
+                            w(:,e(e>0 & (1:numel(e))>1),:),2),3);
+else get_wave_ = @(w,e) sum(w(:,e(1),:), 3); 
+end
+                     
+if size(elec,1) > 1
+  for ee = 2:size(elec,1)
+    plot(D.time(ok),(ee-1)*dy + ...
+         get_wave_(D.waves(ok,:,:), elec(ee,:)), style{:},G(5))
+  end
+else
+  
+  
+end
+plot(D.time(ok),get_wave_(D.waves(ok,:,:), elec(1,:)),style{:},G(2))
+
+for pp = 1:numel(D.axontype)
+  plot(D.time(ok),get_wave_(D.waves(ok,:,pp),elec(1,:)) - dy*pp, ...
+       style{:},D.axon_color(pp,:))  
 end
 
 axis tight, tools.tidyPlot, xlim(t_roi)
@@ -119,18 +164,17 @@ if numel(data_list) <= 1
   warning('ViNERS:viewWaves:cannotAverage',... 
         'Only %d files found which are replicates of "%s", cannot produce an average.', ... 
         numel(data_list), data_file)
+
+  all_waves = get_wave_(D.waves(:,:,:),elec(1,:));   
+  for pp = numel(D.axontype):-1:1
+    all_waves = [get_wave_(D.waves(:,:,pp),elec(1,:)) all_waves]; %#ok<AGROW>
+  end
+      
   if isempty(which('mtspectrumc'))
-      
-      [avg_spec,hz] = pwelch([squeeze(D.waves(:,1,:)-D.waves(:,2,:)) ...  
-                              sum(D.waves(:,1,:)-D.waves(:,2,:),3)], ...
-                               [],[],[],chronux_opts.Fs);
-      avg_spec(hz > hz(end)/2,:) = []; 
-       hz(hz > hz(end)/2,:) = []; 
-      
-      
-  else [avg_spec,hz] = mtspectrumc([squeeze(D.waves(:,1,:)-D.waves(:,2,:)) ...  
-                                        sum(D.waves(:,1,:)-D.waves(:,2,:),3)], ...
-                                        chronux_opts);
+   [avg_spec,hz] = pwelch(all_waves,[],[],[],chronux_opts.Fs);
+    avg_spec(hz > hz(end)/2,:) = []; 
+    hz(hz > hz(end)/2,:) = []; 
+  else [avg_spec,hz] = mtspectrumc(all_waves,chronux_opts);
   end
 end
 
@@ -154,15 +198,17 @@ for ff = 1:length(data_list)
   else                                     alpha = 0.1;
   end
   
+
+  all_waves = get_wave_(D.waves,elec(1,:));   
+  for pp = numel(D.axontype):-1:1
+    all_waves = [get_wave_(D.waves(:,:,pp),elec(1,:)) all_waves];
+  end  
+  
   if isempty(which('mtspectrumc'))
-      [spec,hz] = pwelch([squeeze(D.waves(:,1,:)-D.waves(:,2,:)) ...  
-                              sum(D.waves(:,1,:)-D.waves(:,2,:),3)], ...
-                               [],[],[],chronux_opts.Fs);
+      [spec,hz] = pwelch(all_waves,[],[],[],chronux_opts.Fs);
       spec(hz > hz(end)/2,:) = []; 
        hz(hz > hz(end)/2,:) = []; 
-  else [spec,hz] = mtspectrumc([squeeze(D.waves(:,1,:)-D.waves(:,2,:)) ...  
-                                    sum(D.waves(:,1,:)-D.waves(:,2,:),3)], ...
-                               chronux_opts);
+  else [spec,hz] = mtspectrumc(all_waves, chronux_opts);
   end
 
   for ii = 1:numel(D.axontype)

@@ -50,6 +50,7 @@ if contains(filename,filesep) && exist(filename,'file') == 2, return, end
 %% Pattern 1 : ~/source/path/to/goods.csv
 if any(filename == '~')  
   filepath = get_complete_filepath(filename,info,varargin{:});   
+elseif filename(1) == '.', filepath = filename; % do nothing
 else
   %% Other Instruction
   cmd = upper(filename); 
@@ -81,10 +82,15 @@ else
     case {'T','TITLE','SHORT'}, filepath = strrep(varargin{1},info.root,'~');        
     case {'T2','TT','SHORTER'}, filepath = strrep(varargin{1},tools.file('sub~'),'sub~');
     case {'MAKE'}, tools.make_SPARC_subject(varargin{:}); 
-                   tools.file('set',varargin{:}); 
+                   filepath = tools.file('set',varargin{:}); 
     otherwise
       error('Unknown command "%s"', cmd)
   end
+end
+
+if nargout == 0, 
+  if exist('filepath','var'), disp(filepath), end
+  clear
 end
 
 %%
@@ -101,13 +107,18 @@ tok  = find(filename == '~',1);
 if filename(1) == '~' 
   root = [info(1).root]; % ~/source/***    
 elseif strncmpi(filename,'sub~',4) % ~/primary/sub-XX/folder/data.mat  
-  root = [info(1).root filesep 'primary' filesep info.sub];
+  if info.sub(1) == '.' % local filepath
+       root = info.sub;
+  else root = [info(1).root filesep 'primary' filesep info.sub];
+  end
 elseif strncmpi(filename,'out~',4) || strncmpi(filename,'deri',4)
   root = [info(1).root filesep 'derivative']; 
 else % other folders inside of 
   
   root = filename(1:tok-1);
-  list = dir([info.root '/primary/' info.sub '/*']); 
+  if info.sub(1) == '.', list = dir(info.sub); % local filepath
+  else list = dir([info.root '/primary/' info.sub '/*']); 
+  end
   list = list([list.isdir]);  
   
   if ~any(strcmp({list.name},root)) && ~any(named('-make'))
@@ -122,8 +133,14 @@ else % other folders inside of
       list(1).name = root; 
     else
      if ~any(named('-q'))
-       warning('ViNERS:file:missingSampleType', ...
-               '"%s" not found in ~/primary/%s or ~/', root, info.sub);
+       if info.sub(1) == '.',       
+         warning('ViNERS:file:missingSampleType', ...
+                 '"%s" not found in %s or ~/\n%s', root, info.sub, ...
+                 'You appear to be using a local relative subject path. Have you changed working directories?' );
+       else
+         warning('ViNERS:file:missingSampleType', ...
+                 '"%s" not found in ~/primary/%s or ~/', root, info.sub);
+       end
      end
      filepath = ''; 
      return
@@ -177,7 +194,6 @@ if a_dir, a_dir = 'folder'; else a_dir = 'file'; end
 if any(named('-v')), warning('ViNERS:file:notFound','Requested %s "%s" does not exist.',a_dir,filename), end
 return
 
-
 %% Child functions
 function [name,list] = set_subject_ID(info,varargin)
 
@@ -199,11 +215,7 @@ if isempty(list)
         'tools.make_SPARC_structure','tools.make_SPARC_subject(1)')
 end
 
-[list.id] = deal(0); 
-list(1).id = cellfun(@(n) str2double(regexp(n,'\d+','match','once')), ...
-                                           {list.name},'unif',0);
-[list.id] = list(1).id{:};
-
+list = name_from_number([],list); % set list.id
 
 if nargin <= 1 % not specified, give a menu and warn that this is not OK
   if all(cellfun(@(x) numel(x)==1, {list.id}))
@@ -223,6 +235,13 @@ if ~isnumeric(varargin{1}) % parse string argument
   
   cmd = varargin{1}; 
   if any(ismember(cmd,'/\')) % filepath fragment    
+    
+    if cmd(1) == '.' % local path
+      warning('ViNERS:file:localPath','Setting local subject path %s', cmd)      
+      name = [cmd filesep]; 
+      return
+    end
+    
     cmd = strsplit(cmd,{'\','/'});    
     if any(strncmpi(cmd,'run',3))
         varargin = [cmd(strncmpi(cmd,'run',3)) varargin]; 
@@ -234,6 +253,7 @@ if ~isnumeric(varargin{1}) % parse string argument
     named = @(v) strncmpi(v,varargin,length(v)); % update, varargin changed
     cmd = cmd{1};
   end
+  
   cmd = strtrim(regexp(cmd,'(?<=[=\-:]).*','match','once'));
   if ~isnan(str2double(cmd)), varargin{1} = str2double(cmd);
   elseif ~isempty(dir([info.root '/primary/' varargin{1} '*'])) 
@@ -246,17 +266,29 @@ if ~isnumeric(varargin{1}) % parse string argument
     end
     name = strrep([list(sel).folder filesep list(sel).name],  ...
                   [info.root '/primary/'],'');
-
-    if any(named('sam')) % No error/existance checking
+    
+    if any(named('sam')) % Check sample ID if specified
       sam = varargin{named('sam')}; 
       if any(sam=='='), sam = regexp(sam,'(?<=[=]).*','match','once'); end
-      name = [name filesep sam]; 
+      if exist([name filesep sam],'dir'), name = [name filesep sam];
+      else
+        list = dir([info.root '\primary\' name ]); 
+        sam = name_from_number(sam,list);
+        name = [name filesep sam];
+      end
     end
-    if any(named('run')) % No error/existance checking
+
+    if any(named('run')) % Check run ID if specified
       run = varargin{named('run')}; 
       if any(run=='='), run = regexp(run,'(?<=[=]).*','match','once'); end
-      name = [name filesep run]; 
+      if exist([name filesep run],'dir'), name = [name filesep run];
+      else
+        list = dir([info.root '\primary\' name ]); 
+        run = name_from_number(run,list);
+        name = [name filesep run];
+      end
     end
+    
     name = strrep(tools.file('T',name),['~' filesep 'primary' filesep],'');
     return
   elseif any(named('-make'))
@@ -272,8 +304,7 @@ if ~isnumeric(varargin{1}) % parse string argument
       if any(run=='='), run = regexp(run,'(?<=[=]).*','match','once'); end
       name = [name filesep run];       
     end    
-    mkdir([info.root '/primary/' name])
-
+    mkdir([info.root '/primary/' name])    
   end
   if isnan(str2double(cmd))
    if iscell(cmd), cmd = cmd{1}; end
@@ -316,59 +347,53 @@ if isnumeric(varargin{1})
   end
   name = list(sel).name;
   
-  if any(named('sam')) % No error/existance checking
+  if any(named('sam')) % Check sample ID if specified
     sam = varargin{named('sam')}; 
     if any(sam=='='), sam = regexp(sam,'(?<=[=]).*','match','once'); end
-    name = [name filesep sam];     
+    if exist([name filesep sam],'dir'), name = [name filesep sam];
+    else
+      list = dir([info.root '\primary\' name ]); 
+      sam = name_from_number(sam,list);
+      name = [name filesep sam];
+    end
   end
   
-  if any(named('run')) % No error/existance checking
+  if any(named('run')) % Check run ID if specified
     run = varargin{named('run')}; 
     if any(run=='='), run = regexp(run,'(?<=[=]).*','match','once'); end
-    name = [name filesep run];       
+    if exist([name filesep run],'dir'), name = [name filesep run];
+    else
+      list = dir([info.root '\primary\' name ]); 
+      run = name_from_number(run,list);
+      name = [name filesep run];
+    end
   end
-  
-  if mod(varargin{1},1) == 0, return, end 
-  
+    
   %% Repeat to get .sample for subject.sample syntax
+  if any(named('sam')), return, end % not using this syntax
+  if mod(varargin{1},1) == 0, return, end % not using this syntax
   
-  sam = mod(sub,1); 
+  sam = mod(sub,1); % remove integer part (subject code)
   if nargin > 2 && isnumeric(varargin{2}), sam = sam * 10.^varargin{2}; 
   else while abs(sam-round(sam)) > 1e-12, sam = 10*sam; end
-       sam = round(sam);
+    sam = round(sam); % figure out the sample code
   end
   
-  list = dir([info.root '/primary/' name '/*']);
-  list(~[list.isdir]) = []; % directories only
-
-  [list.id] = deal(0);
-  list(1).id = cellfun(@(n) str2double(regexp(n,'\d+','match','once')), ...
-                                         {list.name},'unif',0);
-  [list.id] = list(1).id{:};
-
-  sel = ([list.id] == floor(sam)); 
-  if ~any(sel)
-    if any(named('-make')) 
-      mkdir([list(1).folder filesep sprintf('sam-%d',sam)])
-      
-      [name,list] = set_subject_ID(info,varargin{:}); % try again
-      return
+  list = dir([info.root '/primary/' name '/*']);   
+  sam = name_from_number(sam,list); 
+  name = [name filesep sam];
+  
+  if any(named('run')) % Check run ID if specified
+    run = varargin{named('run')}; 
+    if any(run=='='), run = regexp(run,'(?<=[=]).*','match','once'); end
+    if exist([name filesep run],'dir'), name = [name filesep run];
     else
-      warning('ViNERS:file:missingSampleNo', ...
-              'Missing sam-%d in %s.', sam, name)
+      list = dir([info.root '\primary\' name ]); 
+      run = name_from_number(run,list);
+      name = [name filesep run];
     end
   end
 
-  if sum(sel) > 1
-    len = cellfun(@length,{list(sel).name});
-    sel(sel) = (len == min(len));    
-    sel = find(sel,1); 
-    warning('ViNERS:file:multipleSampleIds', ...
-            'Multiple directories in %s match #%d, using "%s"', ...
-               name, sam, list(sel).name)
-  end
-  
-  if any(sel), name = [name filesep list(sel).name]; end
 end
     
 if isempty(name)
@@ -377,6 +402,46 @@ if isempty(name)
           'subject ID was not set, using "%s"', name)
 end
 return
+
+function name = name_from_number(name,list)
+
+get_num_ = @(s) str2double(regexp(s,'\d+','match','once'));
+
+list(~[list.isdir]) = []; % directories only
+
+if isempty(list)
+    warning('ViNERS:file:missingSampleFolder', ...
+            '%d folders matched "%s"',numel(list),name)
+    return
+end
+
+if ~isfield(list,'id')
+    [list.id] = deal(0); 
+     list(1).id = cellfun(get_num_,{list.name},'unif',0);
+    [list.id] = list(1).id{:};
+end
+
+if isempty(name),   name = list; return, end
+if isnumeric(name), num = name; name = num2str(name); 
+else                num = get_num_(name); 
+end
+
+if isempty(num) || isnan(num)
+    warning('ViNERS:file:missingSample', ...
+            '%d folders under ~/primary/ match "%s"',numel(list),name)
+    return
+end
+
+sel = cellfun(@(x) numel(x) > 0 & x(1)==num, {list.id});
+list = list(sel); 
+
+if numel(list) ~= 1
+    warning('ViNERS:file:multipleSamplesListed', ...
+            '%d / %d folders matched "%s"',numel(list), numel(sel),name)
+end
+
+if numel(list) > 0, name = list(1).name; end
+
 
 
 function fpath = get_filepath_prompt(fpath)
@@ -410,7 +475,8 @@ if isempty(this)
   this.file = [this.root filesep 'running.json'];
   this.root = regexprep(this.root,'([\\/])code[\\/].*$','');  
 end
-if isempty(strfind(ctfroot, 'MATLAB')), this.pid = getpid; %#ok<STREMP>
+
+if isempty(which('feature')), this.pid = getpid; % e.g. octave
 else  this.pid = feature('getpid');
 end,  this.time = now;
 
@@ -589,6 +655,7 @@ if nargout == 0, clear, end
 function rename_file(folder,new_name)% from "renameLastFile.m"
 
 if nargin == 1, new_name = folder; folder = pwd; end
+if any(folder == '~'), folder = tools.file(folder); end
   
 ext = regexp(new_name,'\..*$','match','once');
 n = 1;
@@ -670,7 +737,10 @@ elseif contains(fn,'%d')
     fn = strrep(fn,'%d',num2str(val));
   end
 elseif exist(filename,'file')
-  warning('nextfile:overwrite','Preparing to overwrite %s',filename)
+  
+  filename = regexprep(filename,'\.([^\.]*)$','(%d).$1'); % append a %d
+  filename = get_partial_next(filename);  
+  % warning('nextfile:overwrite','Preparing to overwrite %s',filename)
 end
 
 filename = [fp fn fe];

@@ -150,12 +150,12 @@ while ~feof(t)
   for v = 1:numel(tokens), tok = tokens{v}; 
     
     if any(strcmp(input_key,tok)), k = strcmp(input_key,tok);
-      if isnumeric(input_val{k}), 
+      if isnumeric(input_val{k})
         input_val{k} = num2str(input_val{k},12); %#ok<AGROW>
       end
-      in = regexprep(in,['(?<=[^\$])\$' tok '([^\w])'],[input_val{k} '$1']);
+      in = regexprep(in,['\$' tok '([^\w]|$)'],[input_val{k} '$1']);
       continue
-    elseif any(named(tok)), 
+    elseif any(named(tok))
       input_key{end+1} = tok; %#ok<AGROW>
       input_val{end+1} = varargin{find(named(tok))+1}; %#ok<AGROW>
     elseif evalin('caller',['exist(''' tok ''',''var'')'])      
@@ -164,7 +164,7 @@ while ~feof(t)
     else error('Undefined token "%s" in template file', tok)
     end
     
-    if isnumeric(input_val{end}), 
+    if isnumeric(input_val{end})
       input_val{end} = num2str(input_val{end},12); 
     end
     in = regexprep(in,['\$' tok '([^\w]|$)'],[input_val{end} '$1']);

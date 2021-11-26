@@ -1,6 +1,67 @@
 
 function stats = sequential_F_test(X, Y, varargin)
-% Statistical approach used in Eiber 2021a 
+% Statistical approach used in Eiber 2021a. 
+% 
+% F for each model, test the hypothesis that equation with its increased 
+%   number of free parameters provided a significantly better fit to the 
+%   data by calculating the residual errors for each model (see also 
+%   Buzás et al. (2013). If the more complex model significantly reduces 
+%   the residual error over its predecessor, as assessed by a 1-sided 
+%   2-sample F test for equal variances (p?<?0.05), then the more complex 
+%   model is adopted.
+% 
+% For linear models, this is fundamentally the same analysis as an ANOVA. 
+%   However, this formulation can accept (and meaningfully compare) non-
+%   linear (heirarchical or otherwise) model approaches and is otherwise
+%   extremely general. 
+% 
+% Options:
+%   -pdf : generate a PDF of the applied statistical analysis
+%   -log : log-transform Y variables 
+%   -aic : use Akaike’s Information Criterion instead of F test results
+%          (both AICc and F test results will be returned)
+%   -eq {list} : set list of equations to attempt to fit heirarcically
+%                (as a cell array of function handles, each of the form 
+%                 @(x,p) f(x,p) where x is a (data-by-dimensions) array 
+%                 and p is the fitted parameter vector)
+%   -lbl {list} : set display labels corresponding to each equation.
+%   -re {sr_list} : alternative to -lbl, use search-and-replace on
+%                   func2str(equations) to generate labels. sr_list is a 
+%                   (n-by-2) cell array of terms to search (sr_list(:,1))
+%                   and replace (sr_list(:,2)). 
+%   -term {te_list} : cell array, which characters in [lbl] correspond to
+%   occurances of parameters in the model? 
+% 
+%   equations 
+%                (WARNING: this requires further implementation)
+%   -p0 [init] : use the specified initial condition vector for gradient
+%                descent model fitting (fminsearch)
+%   -optimset [opts] : use specified options for gradient descent
+% 
+%   -title [name] : set Y labels for graphs and output data
+%   -xlabel [name] : set X labels for graphs and output data
+%   -fig [fignum] : use specified output figure 
+%   -q : quiet mode
+% 
+% If -eq is not set (or a pregenerated set of equations using -peri or -v2
+%   is not selected), sequential_F_test will attempt a dynamic exploration 
+%   of polynomial models for the supplied X and Y data. That dynamic
+%   exploration can be customised as follows:
+% 
+%   -re 
+%   -max-order [2*nX] : maximum polynomial order model to fit, depends on
+%                       the number of dimensions in X
+%   -kf [10] : change cross-valiation *fold value
+% 
+% Bootstrap options: 
+%   -no-boot  : skip Bootstrap estimation
+%   -nB [1e4] : number of replicates for bootstrap analysis of best fit
+%   -boot-qq [qq] : set quantiles (default: 0.25, 0.5, 0.75) for reporting
+%                   of bootstrap analysis results on parameter estimates 
+% 
+%  models.sequential_F_test(stats, Y, '-boot') : run bootstrap on data
+
+
 
 named = @(v) strncmpi(v,varargin,length(v));
 get_ = @(v) varargin{find(named(v))+1};
@@ -15,12 +76,10 @@ if any(named('-boot')) && isstruct(X)
   return
 end
 
-if do_PDF, ps_folder = 'make-pdf\';   
+if do_PDF,   
   if any(named('-pdf-chunk')), tt = get_('-pdf-chunk');
-   if ~exist([tempdir ps_folder],'dir'), mkdir([tempdir ps_folder]); end
-  else tt = 0;
-   if exist([tempdir ps_folder],'dir'), rmdir([tempdir ps_folder],'s'); 
-   end,                                 mkdir([tempdir ps_folder]);
+    if ~exist([tempdir 'make-pdf\'],'dir'), mkdir([tempdir 'make-pdf\']); end
+  else tt = 0; plots.PDF_tools('setup')
   end
 end
 
@@ -122,13 +181,7 @@ else
       [gof(ii,2),aic(ii,1),aic(ii,2)] = logLik(equations{ii},X,Y,p_est);
     end
 
-    if do_PDF
-         nom = sprintf('%sBpage-%02d-%03d.ps',ps_folder, ... 
-                                              tt,ii);
-         figs_to_ps(gcf,nom,'-move');
-         pause(0.1), 
-    else pause(0.1)
-    end
+    plots.PDF_tools(gcf,do_PDF,'Bpage-%02d-%03d.ps',tt,ii); 
   end % fit equtions loop
 
   %% Compute the grid of F tests
@@ -260,13 +313,8 @@ scatter(1:nEq, 1:nEq, 100, color, 'o','filled')
 title(Y_label,'FontSize',20)
 % set(gca,'Position',get(gca,'Position')-[0 0.03 0 0])
 
+plots.PDF_tools(gcf,'Apage-%02d.ps',tt)
 
-if do_PDF
-     nom = sprintf('%sApage-%02d.ps',ps_folder,tt);
-     figs_to_ps(gcf,nom,'-move');
-     pause(0.1), 
-else pause(0.1)
-end
 
 %%
 
@@ -285,6 +333,8 @@ fprintf('p > %0.4f\n',min(stats.p(ii,n_terms > n_terms(ii))))
 
 if ~any(named('-no-boot')), stats = bootstrap_parameters(X, Y, stats); end
 
+if ~any(named('-pdf-chunk')), plots.PDF_tools('combine','sequential F-test (%d).pdf'); end
+
 return
 
 
@@ -298,6 +348,8 @@ re_label = {'@(x,p)',''};
 isa_term = {}; 
 
 if any(named('-eq')), equations = get_('-eq');
+  
+  
 elseif any(named('-peri')),  
 
   do_v2 = any(named('-standard-form')) || any(named('-v2'));   
@@ -383,10 +435,15 @@ else
   % labels{1} = 'c'; 
 end
 
-if any(named('-te')), isa_term = get_('-te'); end
+n_terms = [];
 
-n_terms = @(eq) sum(cellfun(@(t) sum(eq == t), isa_term)); 
-n_terms = cellfun(n_terms, labels);
+if any(named('-term-v')), n_terms = get_('-term-v');
+else
+  if any(named('-te')), isa_term = get_('-te'); end
+
+  n_terms = @(eq) sum(cellfun(@(t) sum(eq == t), isa_term)); 
+  n_terms = cellfun(n_terms, labels);
+end
 
 [n_terms,seq] = sort(n_terms,'ascend');
 labels = labels(seq);
@@ -452,13 +509,12 @@ fit_('optimset', evalin('caller','f_opt'));
 h = evalin('caller','h'); 
 
 
-if any(named('-cv'))  
-  
-  if any(named('-kf')),   
-       chunks = cvpartition(size(X,1),'KFold',get_('-kf'));
-  else chunks = cvpartition(size(X,1),'KFold',10);  
-  end
+% if any(named('-cv'))  
+if any(named('-kf')),   
+     chunks = cvpartition(size(X,1),'KFold',get_('-kf'));
+else chunks = cvpartition(size(X,1),'KFold',10);  
 end
+% end
 
 while true 
 
@@ -507,13 +563,8 @@ while true
       [gof(ii,2),aic(ii,1),aic(ii,2)] = logLik(equations{ii},X,Y,p_est);
     end
 
-    if do_PDF
-         nom = sprintf('%sBpage-%02d-%03d.ps',ps_folder, ... 
-                                              tt,ii);
-         figs_to_ps(gcf,nom,'-move');
-         pause(0.1), 
-    else pause(0.1)
-    end
+    plots.PDF_tools(gcf,do_PDF,'Bpage-%02d-%03d.ps',tt,ii);
+
   end % fit equtions loop
 
   for ii = 2:numel(residuals)    

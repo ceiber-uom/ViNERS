@@ -1,3 +1,4 @@
+
 function ECAP_recording(varargin)
 % TODO add header documentation : raw docstring below
 % models.ECAP_response( sensitivity(*).mat, '-stim' stim_folder, ... )
@@ -17,6 +18,7 @@ function ECAP_recording(varargin)
 %  if any(named('-preview'))
 %  if ('-fascicle-sum'))
 
+varargin = tools.opts_to_args(varargin,'ecap');
 named = @(v) strncmpi(v,varargin,length(v)); 
 get_ = @(v) varargin{find(named(v))+1};
 p_ = @(x) [x.folder filesep x.name];
@@ -59,7 +61,7 @@ for ff = 1:nF % for each fascicle and electrode, make i2v function
    if ee == 1, sensitivity{ee,ff} = scatteredInterpolant( ... 
                        z_(fac_(ff)), y_(fac_(ff)), x_(fac_(ff)), ...
                        EM.(fascicle).pot(ee,:)', ...
-                       'linear','none'); % units of mm ? 
+                       'natural','none'); % units of mm ? 
    else sensitivity{ee,ff} = sensitivity{1,ff}; 
         sensitivity{ee,ff}.Values = EM.(fascicle).pot(ee,:)';
    end
@@ -89,7 +91,7 @@ if has_fraction && ~any(named('-no-frac'))
     fprintf('Using supplied downsampling (%0.1f-%0.1f%%)\n', ...
              100*min([raster.spike_fraction]), 100*max([raster.spike_fraction]))
 else
-    raster = arrayfun(@(n) load(p_(n), 'results','axon_index'), list);  
+    raster = arrayfun(@(n) load(p_(n),'results','pop','axon_index'), list);  
    [raster.spike_fraction] = deal(1); 
 end
 
@@ -101,7 +103,7 @@ full_raster = convert_raster_population(pop,raster);
 
 %% Get Distortion if specified
 
-if any(named('-dis')),
+if any(named('-dis'))
   options.distortion = get_('-dis'); 
   if size(options.distortion,1) == numel(pop)
     options.distortion_by_type = options.distortion; 
@@ -113,8 +115,6 @@ if any(named('-dis')),
 end
 
 %%
-
-
 fs = 30; % 24.414; % kHz 
 if any(named('-sample-rate')), fs = get_('-sample-rate'); 
 elseif any(named('-fs')),      fs = get_('-fs'); 
@@ -132,7 +132,6 @@ warn_once = true;
 options_setup = options; 
 
 %% Compute intracellular-to-extracellular relationship
-
 for i_stim = 1:n_stim
 
   waves = []; 
@@ -167,19 +166,19 @@ for i_stim = 1:n_stim
     % Work out whether the xy units need to be corrected
     if max(abs(xy(:))) > max(EM.model.nodes(:,1)),  xy = xy / 1e3;
         warning('ViNERS:axonUnits_mm',['%s should be in units of mm. ' ...
-          'treating this as m, maybe cancel this and fix?'], ...
+          'treating this as µm, maybe cancel this and fix?'], ...
           tools.file('T',[options.axons_folder pop(ty).axon_model '\index.mat']))
 
     elseif isfield(pop,'units') && isfield(pop.units,'axon_xy') && ...
           ~strncmp(pop.units.axon_xy,'mm',2)
       % the EIDORS data is in units of mm
       % the axon data /should/ also be in mm but has been known to pop
-      % up in m, which I think was an issue with fascicle tracings being
-      % specified in m.
+      % up in µm, which I think was an issue with fascicle tracings being
+      % specified in µm.
 
       xy = xy / 1e3;
       warning('ViNERS:axonUnits_mm',['%s should be in units of mm, ' ...
-        'not %s. Treating this as m, maybe cancel this and fix?'], ...
+        'not %s. Treating this as µm, maybe cancel this and fix?'], ...
         tools.file('T',[options.axons_folder pop(ty).axon_model{1} '\index.mat']),...
                      pop.units.axon_xy)
 
@@ -240,9 +239,10 @@ for i_stim = 1:n_stim
       hold on, h = get(gca,'Children');
       set(h,'EdgeAlpha',0.2); delete(h(1:2))
 
-      for gg = 1:nG
-        for uu = 1:size(axon_xy{gg},1)
-          xyz = permute(axon_xy{gg}(uu,:,:), [2 3 1]);
+      for gg = 1:nG, 
+       for ff = 1:nF
+        for uu = 1:size(axon_xy{gg,ff},1)
+          xyz = permute(axon_xy{gg,ff}(uu,:,:), [2 3 1]);
           if size(axon_xy{gg},2) == 2
             plot3(0*xyz(1,:), xyz(2,:),xyz(1,:),'o', ...
                 'Color',[1 0 0 0.2],'Clipping','off') 
@@ -252,6 +252,7 @@ for i_stim = 1:n_stim
           end
           hold on
         end
+       end
       end
       
       view([1 0 0])
@@ -268,11 +269,11 @@ for i_stim = 1:n_stim
       for ii = 1:(nG*nF)
         V{ii} = parfun_unpack(cache_path, @(g,f) ...
                       models.spike_to_wave(g+f/gff,time,        ...
-                                           sensitivity(:,ff),  ...
+                                           sensitivity(:,f),  ...
                                            axon_xy{g,f},options), ...
                                            [nG nF],ii);
       end
-    elseif isempty(strfind(ctfroot, 'MATLAB')) %#ok<*STREMP> % octave parallel
+    elseif tools.isOctave %#ok<*STREMP> % octave parallel
         if isempty(which('pararrayfun')), pkg load parallel; end 
         V = pararrayfun(nproc-1, @(a) parfun_unpack(cache_path, @(g,f) ...
                                          models.spike_to_wave(g+f/gff,time, ...
@@ -293,7 +294,7 @@ for i_stim = 1:n_stim
 
     for ff = 1:nF % compute fascicle sum and apply spike-fration scaling
       waves(:,:,ff,ty) = sum(cat(3,V{:,ff}),3); %#ok<AGROW>
-      waves(:,:,ff,ty) = waves(:,:,ff,ty) ./ S.spike_fraction(ff).^(sqrt(1/2)); 
+      waves(:,:,ff,ty) = waves(:,:,ff,ty) ./ (S.spike_fraction(ff).^(sqrt(1/2))); 
     end
       
   end % ty [1..4]
@@ -314,10 +315,11 @@ for i_stim = 1:n_stim
     clf %#ok<UNRCH>
     plot(time,waves(:,:,end) + (0:3)), ax = gca;
     xlim(time([1 end]))
+    ax = gca; 
     ax.Position(4) = ax.Position(4)/2;
     ax(2) = axes('Position',ax.Position +[0 1 0 0]*ax.Position(4));
 
-    plot(raster{end}.spk_time,raster{end}.spk_axon,'k.')
+    plot(raster(end).spk_time,raster(end).spk_axon,'k.')
     ax(2).XLim = ax(1).XLim;
 
     %% Look at outputs for individual spikes
@@ -379,9 +381,9 @@ for i_stim = 1:n_stim
     e_name = strtrim(regexprep(e_name,'\([^\)]*\)',''));
   end
 
-  file_out = sprintf('stim_%03d.mat',i_stim);
   if isfield(stimulus,'CL')
-      file_out = sprintf('stim_CL%03d.mat',stimulus.CL(i_stim));
+       file_out = sprintf('stim_CL%03d.mat',stimulus.CL(i_stim));
+  else file_out = sprintf('stim_UA%04d.mat',round(stimulus.current(i_stim))); 
   end
   wave_path = strrep(['stimulus (' e_name ')'],' ()','');
   wave_path = strrep(wave_path, '))',')');
@@ -442,8 +444,8 @@ function R_full = convert_raster_population(pop,D)
 
 % pop is the source axon population. D is a (nF*nTy) x 1 list with the
 % spike-time, location data for each fascicle and axon model type. 
-
-R = rmfield(D([]),'pop'); % initialise struct fieldnames
+R = D([]); % initialise struct fieldnames
+if isfield(R,'pop'), R = rmfield(R,'pop'); end 
 [R.population_id] = deal([]); 
 types = unique(regexp({D.filename},'^[^-]*','match','once')); 
 
@@ -467,6 +469,16 @@ for ty = 1:numel(types)
     
     ok(daxi) = true; 
     R(ty).results(daxi) = D(ii).results; 
+    
+    if ~isfield(D(ii).pop,'source_index')
+      
+      D(ii).pop.source_index = (1:numel(D(ii).pop.fascicle))';
+      for pp = unique(D(ii).pop.population_id)'
+        whence = (pp == D(ii).pop.population_id); 
+        D(ii).pop.source_index(whence) = (1:sum(whence)); 
+      end
+    end
+    
     R(ty).axon_index(daxi) = D(ii).pop.source_index(daxi);
     R(ty).population_id(daxi) = D(ii).pop.population_id(daxi);
   end  
@@ -485,7 +497,12 @@ end
 D = R; 
 
 for ty = 1:numel(pop)
-  sel = contains({D.filename},pop(ty).axon_model);   
+  sel = contains({D.filename},pop(ty).axon_model); 
+  
+  if ~any(sel)
+      warning('ViNERS:missingPop','Population "%s" missing from membrane currents folder',pop(ty).axon_model)
+      continue
+  end
   R(ty) = D(sel);
   
   if length(unique(R(ty).population_id)) == 1, continue, end

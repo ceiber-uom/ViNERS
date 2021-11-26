@@ -1,5 +1,7 @@
 
 function output = INPUT_file(list,object,varargin)
+% Note: this function is depriciated, I intend to remove this in future
+% versions of ViNERS. 
 
 if nargin == 0, object = tools.file('sub~'); end
 

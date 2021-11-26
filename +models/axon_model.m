@@ -7,26 +7,62 @@ function result = axon_model(index, field, varargin)
 %   result(ii,:) = axon_model(ii, VE_field or [],arg_in{:});
 % end
 % 
+% This function is used by models.nerve_stimulation,
+%                          models.membrane_cirrents, and 
+%                          models.axon_thresholds.
+% 
 % Possible command-line arguments: 
+% MRG, Gaines, Sundt, Tiger : use specified axon model. 
+%     MRG and Gaines are myelinated axon models,
+%     Sundt and Tigerholm are unmyelinated axon models. 
+% 
+% -fixed-stim      : use a fixed set of stimulus current level 
+%                    (default: search for threshold)  
+% -constantlen [x] : set length of model axon (recommended)
+% -gRatio [g]      : set axon g-ratio (recommended, irrelevant to -sundt)
+% -XY [xy]         : coordinates of axon within Ve field
+% -sphase [val]    : set spatial phase (as % of node-node length)
+% -echo            : run a second NEURON process in the console
+%                    (useful for debugging on windows), similar to -debug
+% 
+% -spike   : output spiketimes (default)
+% -voltage : output membrane voltages (slower)
+% -current : output membrane voltages and currents (slowest)
+% 
+% -stimulus    : use specified stimulus waveform (struct)
+%                alternatively, the stimulus can be customised using the 
+%                following options: 
+% -pw [0.4 ms]   : set pulse width for symmetric biphasic stimulus
+% -delay [30 ms] : set delay from model intial to allow model to settle
+% -ua [list]     : set fixed stimulus levels (µA) for -fixed-stim
+% 
+% Special arguments:
+% --HOC {hoc_code} : execute HOC code between model set-up and running the
+%                    experiment. 
+% -spk-volt [-20mV] : set spike detection threshold in NEURON
+% -nrn-dt [delta-t] : set NEURON integration time from default
+% 
+% -postprocess [handle] : call custom processing code on NEURON output
+% -custom-analysis [handle] : call custom analysis code on NEURON output
+% -terminal : capture membrane current profiles from last segment of axon
+% -sweep-range : sweep range for find_threshold_external / _internal
+%                (1x3 vector, [initial minimum maximum]) 
+% -vclamp : run voltage clamp experiment. Also -vclamp-full, -inactivation,
+%           -vclamp-node [n] control this experiment mode
+% -r-vector : return results as a vector (useful for Sobol' analysis)
+% -log-errors : enable error logging (for threshold_high, threshold_low)
+% -t-start [x] : disable NEURON logging until t > x, useful for analysis
+%                 of complex stimuli. 
+% -no-auto-t : disable threshold approximation for fixed-level stimuli
 % -get-parameters : return list of biophyics parameters (matches inputs
 %        needed by makeFromTemplate for +models/Gaines2016_v3.hoc.template)
 %        these parametes can be set using 'Name',value semantics. 
-% -sensitivity  [values] : accept varlist for sensitivity analysis of
-%                                  biophysical parameters (Sobol')
+% -get-nodes : return axon collocation locations for specified model
+% -sensitivity  [values] : accept values for sensitivity analysis of
+%                                  biophysical parameters (e.g. Sobol')
+% -no-analysis: return raw output from NEURON
 %
-% -sphase      : run spatial phase sensitivity test
-% -stimulus    : run a specified current level (instead of threshold)
-% -constantlen : set length of model axon to constant value (recommended)
-% -gRatio      : set axon g-ratio (recommended, irrelevant to -sundt)
-% 
-% -motor; MRG  : set model type to (modified) MRG motor axon model
-% -sensory     : set model type to Gaines sensory axon model
-% -cfiber      : set model type to Sundt nociceptor model
-% -XY          : coordinates of axon within Ve field
-% 
-% -sweep-range : sweep range for find_threshold_external / _internal
-%                (1x3 vector)
-% 
+%
 % This depends on C:\neuron\bin\nrniv.exe existing and that nrniv.exe can 
 % be executed from from the system command-line. Executing the neuron model
 % can be slow; however, this code will hang in near line 96 if there are
@@ -34,7 +70,7 @@ function result = axon_model(index, field, varargin)
 % long, try running with -debug to view the neuron output (the system call
 % which invokes neuron is run with -echo on)
 % 
-% model version 0.4 Calvin Eiber 03-Jun-2020
+% model version 0.5 Calvin Eiber 18 Nov 2020
 
 if nargin == 0, index = 0; field = []; varargin{1} = '-spike';  end
 named = @(v) strncmpi(v,varargin,length(v)); 
@@ -42,7 +78,7 @@ get_ = @(v) varargin{find(named(v))+1};
 
 contains = @(a,b) ~isempty(strfind(a,b)); %#ok<STREMP>
 
-if ~contains(ctfroot, 'MATLAB')
+if tools.isOctave
   % [~,pidlist] = system('pgrep octave'); 
   % pidlist = str2double(regexp(pidlist,'\d+','match'));
   t.ID = getpid; % sum(pidlist < getpid);
@@ -52,11 +88,11 @@ else t = getCurrentTask(); % Thread index
   if isempty(t), t.ID = 0; end
 end
 
-NOT_MYEL = any(named('-unmy')) || any(named('Sundt')); 
+NOT_MYEL = any(cellfun(@(n) any(named(n)), {'-unmy','Sundt','Tiger','Zang-un'}));
 FLAG_DEBUG = any(named('-debug')); 
 
 % Get list of biophysics parameters and parse input args
-vars = get_paramaters(NOT_MYEL, t.ID);
+vars = get_parameters(NOT_MYEL, t.ID);
 
 if any(named('-get-par')), result = vars'; return, end
 
@@ -69,11 +105,20 @@ hoc_file   = sprintf('%s/nrn-%02d.hoc',cache_path,t.ID);
 % the Sundt model does /not/ include the KCNQ channels except at
 % the T-junction in the DRG. 
 
-if NOT_MYEL, template_file = {'./+models/Sundt2015_v1.hoc.template'};
+if NOT_MYEL
+  if any(named('tiger'))
+    template_file = {'./+models/Tigerholm2014_v1.hoc.template'};
+  elseif any(named('zang'))
+    template_file = {'./+models/Zang2021_v1.hoc.template','Zang_UNMYELINATED'};
+  else 
+    template_file = {'./+models/Sundt2015_v1.hoc.template'};
+  end
 elseif any(named('-sens')) || any(named('gaines'))
      template_file = {'./+models/Gaines2016_v3.hoc.template', 'neuron_SENSORY'};
+elseif any(named('zang'))
+     template_file = {'./+models/Zang2021_v1.hoc.template','Zang_MYELINATED'};
 else template_file = {'./+models/Gaines2016_v3.hoc.template', 'neuron_MOTOR'};
-  if ~any(named('mrg')), 
+  if ~any(named('mrg'))
     warning('ViNERS:axonModel:default','using default axon model (modified from MRG 2002)')
   end
 end
@@ -83,6 +128,8 @@ tools.makeFromTemplate(template_file{:},vars{:},'CACHEPATH',cache_path, ...
                                                 '-output',hoc_file); 
 %%
 node = make_Vfield_datfiles(t.ID,field,vars,1);
+
+if any(named('-get-node')), result = node; return, end
 
 if any(named('-echo')) || FLAG_DEBUG, do_echo = '-echo'; 
 else do_echo = false; 
@@ -95,16 +142,15 @@ end
 
 if any(named('-VCLAMP'))
   hoc_cmd = sprintf('run_VoltageClamp()');
-  hoc_cmd = set_named_mode(get_,named,hoc_cmd); % Use a specific output mode? 
-
-elseif isempty(field), % Internal step current stimulus
+elseif isempty(field) % Internal step current stimulus
   hoc_cmd = sprintf('find_threshold_internal(%0.4f,%0.4f,%0.4f)',do_range(1,:));
 elseif any(named('-fixed-s'))
   hoc_cmd = sprintf('run_stim_sweep()');
-  hoc_cmd = set_named_mode(get_,named,hoc_cmd); % Use a specific output mode? 
 else
   hoc_cmd = sprintf('find_threshold_external(%0.4f,%0.4f,%0.4f)',do_range(2,:));
 end
+
+hoc_cmd = set_named_mode(get_,named,hoc_cmd); % Use a specific output mode? 
 
 % ======================================================
 
@@ -120,6 +166,8 @@ if contains(nrn_out,'abort THRESHOLD_HIGH')
        hoc_cmd = sprintf('find_threshold_internal(%0.4f,%0.4f,%0.4f)',do_range(1,:)*5);
   else hoc_cmd = sprintf('find_threshold_external(%0.4f,%0.4f,%0.4f)',do_range(2,:)*5);
   end
+  
+  hoc_cmd = set_named_mode(get_,named,hoc_cmd); % Use a specific output mode? 
   nrn_out = invoke_neuron(hoc_file,hoc_cmd,do_echo);
 end
 
@@ -173,16 +221,31 @@ function output = invoke_neuron(hoc_file,command,echo)
 return
 
 %% Parse inputs to models.axon_model
-function list = get_paramaters(NOT_MYEL,threadID)
+function list = get_parameters(NOT_MYEL,threadID)
 
 named = evalin('caller','named');
 get_ = evalin('caller','get_');
 verbose = any(named('-debug')); 
 
 if NOT_MYEL
-
-    list = {'thread','fibreDiam','nodeLength','nNodes','simDuration', ...
-            'p_rhoA','p_gKCNQ','p_gNaV','p_gKV','p_NaVshift'};
+  list = {'thread','fibreDiam','nodeLength','nNodes','simDuration', ...
+          'p_rhoA','p_vrest','p_cm', ... % 1-8 shared 
+          'p_gKCNQ','p_gNaV','p_gKV','p_NaVshift'};
+  if any(named('Tiger'))    
+    list = [list(1:8) {'p_gbar_ks','p_gbar_kf','p_gbar_h','p_nattxs', ...
+                       'p_nav18','p_nav19','p_a_nakPump','p_gbar_kdr',...
+                       'p_gbar_kna','p_theta_naoi','p_theta_koi'}];
+  elseif any(named('Zang'))
+    list = [list(1:6) {'p_node_cm','p_node_gna','p_node_gka', ...
+                       'p_node_gkd','p_node_leak','p_node_nadp'}];
+    list{4} = 'numbernodes'; 
+  end
+elseif any(named('Zang'))
+    list = {'thread','fibreDiam','numbernodes','simDuration', ...
+            'p_node_len','p_myel_len','p_node_cm','p_myel_cm', ...
+            'p_rhoa','p_node_gna','p_node_gka','p_node_gkd',...
+            'p_node_leak','p_node_nadp','p_myel_leak','p_myel_nadp'};
+    
 else
     list = {'thread','fibreDiam','numbernodes','simDuration', ...
             'p_nodelen','p_mysalen','p_flutlen','p_stinlen', ...
@@ -200,13 +263,20 @@ if NOT_MYEL
   list{2,4} = 300;  % n_nodes
   list{2,5} = 100;  % simDuration, ms
   if any(named('-old-resol'))
-    list{2,3} = 10;  
+    list{2,3} = 10;
     list{2,4} = 600; 
+  end
+  if any(named('zang'))
+    list{2,2} = 0.6;
   end
 else
   list{2,2} = 4;    % fibreDiam, um
   list{2,3} = 31;   % numbernodes
   list{2,4} = 100;  % simDuration, ms
+  if any(named('zang'))
+    list{2,2} = 1;  % fibreDiam, um
+    list{2,16} = 0; % No Na/K pump in myelin segments 
+  end
 end
 
 for ii = 1:size(list,2) % 'name', value semantics
@@ -217,9 +287,9 @@ end
 
 if any(named('-sensitivity'))
   param = get_('-sensitivity');
-  param(end+1 : size(list,1)) = 1; 
-  if NOT_MYEL, list(2,6:9)  = num2cell(param(:));
-  else                list(2,5:16) = num2cell(param(:)); 
+  param(end+1 : size(list,2)) = 1;
+  if NOT_MYEL, list(2,6:end) = num2cell(param(1:end-5));
+  else         list(2,5:16) = num2cell(param(1:end-4)); 
   end
 end
 
@@ -269,7 +339,6 @@ else % construct a biphasic 1-channel stimulus
   if any(named('-pw')), p_width = in_('-pw'); end
   if any(named('-delay')), delay = in_('-delay'); end
 
-
   param = struct;
   param.t = delay + [0 p_width p_width+0.02 2*p_width+0.02];
   param.p = [1; 0; -1; 0]; 
@@ -287,6 +356,20 @@ else % construct a biphasic 1-channel stimulus
 end
 list{1,end+1} = 'stimulus_pattern';
 list{2,end} = param; 
+
+
+if ~any(named('-no-auto-t'))
+  tsd = strcmp(list(1,:),'simDuration');
+  if max(param.t) > list{2,tsd}-10
+    % index = evalin('caller','index');
+    % fprintf('[%c[%03d] warning: increasing sim duration from %g to %g ms.\n%s]%c\n', ...
+    %       char(8), index, list{2,tsd}, max(param.t)+10, ...
+    %         '      Suppress this behaviour using -no-auto-t', char(8))
+    list{2,tsd} = max(param.t)+10; 
+  end
+end
+
+return
 function vars = set_gRatio_scale(vars, gratio)
 
 % nodeD  = (0.00630378*(fiberDiam*fiberDiam) + 0.207054*(fiberDiam) + 0.5339) * $p_nodedia // quadratic re-scaling per Lubba 2019
@@ -299,6 +382,8 @@ diam  = vars{2,2}; % fibreDiam;
 axonDiamFcn = @(d) (0.01876226*(d*d) + 0.478749*(d) + 0.1204); 
 p_stindia = gratio * diam / axonDiamFcn(diam);
 
+assert(all(contains(vars(1,9:12),'dia'))) % safety check
+
 vars{2,9}  = p_stindia;  % p_nodedia
 vars{2,10} = p_stindia;  % p_mysadia
 vars{2,11} = p_stindia;  % p_flutdia
@@ -307,37 +392,56 @@ vars{2,12} = p_stindia;  % p_stindia
 return
 function cmd = set_named_mode(get_,named,cmd)
 
-if any(named('-VClamp-full'))
-    cmd = ['output_mode=6" -c "' cmd];    
-elseif any(named('-spike')) || any(named('-save-S')) 
-    cmd = ['output_mode=1" -c "' cmd];
-elseif any(named('-volt')) || any(named('-save-V')) 
-    cmd = ['output_mode=2" -c "' cmd];
-elseif any(named('-current')) || any(named('-save-I')) 
-    cmd = ['output_mode=3" -c "' cmd];
+if ~strncmp(cmd,'find_threshold',14)
+  if any(named('-VClamp-full'))
+      cmd = ['output_mode=6" -c "' cmd];    
+  elseif any(named('-spike')) || any(named('-save-S')) 
+      cmd = ['output_mode=1" -c "' cmd];
+  elseif any(named('-volt')) || any(named('-save-V')) 
+      cmd = ['output_mode=2" -c "' cmd];
+  elseif any(named('-current')) || any(named('-save-I')) 
+      cmd = ['output_mode=3" -c "' cmd];
+  end
+
+  if any(named('-t-start'))  
+      cmd = sprintf('start_output=%0.4f" -c "%s', get_('-t-start'), cmd);
+  end
+
+  if any(named('-VCLAMP')) % pass in extra commands 
+
+  % VC_nodeID = 1 // which node is VClamp attached to? (settable)
+  % VC_parID  = 1 // which VClamp.amp[0,1,2] is updated? 
+
+    if any(named('-VClamp-node'))
+      cmd = sprintf('VC_nodeID=%d" -c "%s', get_('-VClamp-node'), cmd);    
+    end
+    if any(named('-inactivation'))    
+      cmd = ['VC_parID=0" -c "' cmd];
+    end  
+  end
+
 end
 
-if any(named('-t-start'))  
-    cmd = sprintf('start_output=%0.4f" -c "%s', get_('-t-start'), cmd);
-end
 if any(named('-spk-volt'))  
     cmd = sprintf('AP_threshold=%0.4f" -c "%s', get_('-spike-volt'), cmd);
 end
 
-if any(named('-VCLAMP')) % pass in extra commands 
-  
-% VC_nodeID = 1 // which node is VClamp attached to? (settable)
-% VC_parID  = 1 // which VClamp.amp[0,1,2] is updated? 
-  
-  if any(named('-VClamp-node'))
-    cmd = sprintf('VC_nodeID=%d" -c "%s', get_('-VClamp-node'), cmd);    
-  end
-  if any(named('-inactivation'))    
-    cmd = ['VC_parID=0" -c "' cmd];
-  end  
+if any(named('-nrn-dt'))  
+    cmd = sprintf('dt=%g" -c "%s', get_('-nrn-dt'), cmd);
 end
 
-cmd = [cmd '" -c "quit()']; % make sure neuron exits
+hoc = {};
+if any(named('--HOC')), hoc = get_('--HOC');
+elseif any(named('-hoc')),  hoc = get_('-hoc');
+end
+
+if ~iscell(hoc), hoc = {hoc}; end
+if ~isempty(hoc)
+    hoc = sprintf('%s" -c "', hoc{:}); 
+    cmd = [hoc cmd];
+end
+
+cmd = [cmd '" -c "quit()']; % try to make sure neuron exits
 
 
 function param = convert_3D_axon(xyz,param)
@@ -446,16 +550,27 @@ axis equal, grid on
 function coords = make_Vfield_datfiles(tid,field,param,iStim)
 
 NOT_MYEL = evalin('caller','NOT_MYEL'); 
+named = evalin('caller','named'); 
 par_ = @(s) strcmpi(param(1,:),s);
 
 if nargin < 3, iStim = 1; end % global scaling factor now that iterating iStim up/dn 
 
 if NOT_MYEL, node = {'NODE'};
-    
+  
+    f_diam = param{2,2}; 
     s_len(1) = param{2,3};
     n_node   = param{2,4};
     s_type   = 1; 
-    
+elseif any(named('zang'))
+  
+    node = {'NODE','MYEL'};
+  
+    f_diam = param{2,2}; 
+    n_node = param{2,3};
+    s_len(1) = 1.0 * param{2,5};
+    s_len(2) = 100.0 / 3 * param{2,6};
+    s_type = [1 2 2 2];
+  
 else % Myelinated MRG-like double-cable model
     
     node = {'NODE','MYSA','FLUT','STIN'};
@@ -469,14 +584,15 @@ else % Myelinated MRG-like double-cable model
     s_len(4) = ((221.1322 * f_diam .^ 3.133103) ./ ...
                 (f_diam .^ 3.133103 + 593.404881)); % stin width, um
     
-    s_type = [1 2 3 4 4 4 4 4 4 3 2];
-    if ischar(iStim) && strcmpi(iStim,'-info')
-      coords.f_diam = f_diam;
-      coords.lengths = s_len; 
-      coords.types = s_type;
-      coords.n_node = n_node;
-      return
-    end
+    s_type = [1 2 3 4 4 4 4 4 4 3 2];    
+end
+
+if ischar(iStim) && strcmpi(iStim,'-info')
+  coords.f_diam = f_diam;
+  coords.lengths = s_len; 
+  coords.types = s_type;
+  coords.n_node = n_node;
+  return
 end
     
 widths = s_len(s_type); 
@@ -499,9 +615,9 @@ else
     dz = par_('spatial_location'); 
     
     if size(param{2,dz},2) == 3
-      x = param{2,dz}(:,1) ; % / 1000;
+      x = param{2,dz}(:,3) ; % / 1000;
       y = param{2,dz}(:,2) ; % / 1000;
-      z = param{2,dz}(:,3) ; % / 1000;
+      z = param{2,dz}(:,1) ; % / 1000;
     else
       x = 0*z + param{2,dz}(1) ; % / 1000;
       y = 0*z + param{2,dz}(2) ; % / 1000;
@@ -509,7 +625,7 @@ else
   else x = 0*z; y = 0*z; % default: 0,0
   end
   
-  if iscell(field), 
+  if iscell(field)
     
     vStim = cellfun(@(f) f(x,y,z) * iStim, field, 'unif',0);
     vStim = [vStim{:}];
@@ -569,7 +685,12 @@ vars      = evalin('caller','vars');
 
 followup = false; 
 
-if contains(hoc_cmd,'find_threshold_internal'), noun = 'Spike at';
+if any(named('-custom-analysis')), 
+   cmd = get_('-custom-analysis'); 
+   [result,hoc_cmd,followup] = cmd(hoc_cmd, nrn_out, vars, index); 
+   return
+
+elseif contains(hoc_cmd,'find_threshold_internal'), noun = 'Spike at';
 elseif contains(hoc_cmd,'find_threshold_external'), noun = 'Threshold';
 elseif contains(hoc_cmd,'run_stim_sweep') || contains(hoc_cmd,'stimulus')
   
@@ -577,7 +698,7 @@ elseif contains(hoc_cmd,'run_stim_sweep') || contains(hoc_cmd,'stimulus')
 
     stim = vars{2,par_('stimulus_pattern')};
     nStim_init = numel(stim.a);
-    nStim_out = numel(strfind(nrn_out,'stimulus[0] ='));
+    nStim_out = numel(regexp(nrn_out,'stim[^ ]* \=','match'));
     stim_label = 'Stimulus Sweep ('; 
     
     if all(size(stim.a) > 1)
@@ -625,7 +746,7 @@ elseif contains(nrn_out,'abort THRESHOLD_LOW')
     result(1) = str2double(regexp(nrn_out,'(?<=LOW at )\d+(\.\d+)?','match','once'));    
     fprintf('[%c[%03d] warning THRESHOLD_LOW, using %0.8f uA]%c\n', char(8), index, result(1), char(8))
     
-    if isempty(field),
+    if isempty(field)
          hoc_cmd = sprintf('run_stim(0.0, %0.6f)', result(1) * 2);
     else hoc_cmd = sprintf('run_stim(%0.6f, 0.0)', result(1) * 2); 
     end    
@@ -700,7 +821,7 @@ x = abs(z_mm(:) - z_mm(s0));
 ok = ~isnan(t0);
 ok = ok & diff([-1;t0]) > 0; % orthodromic only
 
-if sum(ok) < 2, 
+if sum(ok) < 2
   
   fprintf('[%c[%03d] check conduction velocity!]%c\n', char(8), evalin('caller','index'),char(8))
   
@@ -766,6 +887,7 @@ end
 function [f,result] = build_cache_file(cache_file,waves,vars,result)
 
 NOT_MYEL = evalin('caller','NOT_MYEL'); 
+
 idx = [waves.init_segment waves.prop_segment]; 
 par_ = @(s) strcmpi(vars(1,:),s);
 
@@ -784,12 +906,23 @@ if isempty(waves.t)
 end
 
 if isfield(waves,'im')
-  if ~NOT_MYEL
+  if ~NOT_MYEL    
+    named = evalin('caller','named');
+    
+    if any(named('zang'))
+      idx = [idx(1)  idx(2)*[1 3 3 3] - ...
+                            [0 3 2 1]];  
+      idx(3:end) = idx(3:end) + find(strncmpi(waves.secname,'myelin',4),1);
+    % config = make_Vfield_datfiles(vars{2,1},[],vars,'-info');
+    % config.label = unique(regexprep(waves.secname,'\[[^\]]+\]',''),'stable')    
+    % nspn = arrayfun(@(t) sum(config.types == t)
+    else
       idx = [idx(1)  idx(2)*[1 2 2 2 2 6 6 6 6 6 6] - ...
                             [0 2 1 2 1 6 5 4 3 2 1]];  
       idx(3:4) = idx(3:4) + find(strncmpi(waves.secname,'MYSA',4),1);
       idx(5:6) = idx(5:6) + find(strncmpi(waves.secname,'FLUT',4),1);
       idx(7:end) = idx(7:end) + find(strncmpi(waves.secname,'STIN',4),1);
+    end
   end
 end
 

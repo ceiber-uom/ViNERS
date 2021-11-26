@@ -82,7 +82,7 @@ if isfield(options,'raster')
     error simple_raster_input % (groups precomputed or no grouping)
   end
 else 
-  nrw = true; % do a warning
+  nrw = true; % do a 'no raster' warning
   if ~isfield(options,'jitter'), options.jitter = 0; nrw = false; end
   if ~isfield(options,'fraction'), options.fraction = 1; nrw = false; end
   if nrw, warning('ViNERS:Spike_to_wave:noRaster', ... 

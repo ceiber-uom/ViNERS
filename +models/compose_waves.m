@@ -25,6 +25,7 @@ function [responses,config] = compose_waves(varargin)
 % -base `path` : use specified directory for baseline firing rate for
 %                inactive axon types 
 % -quick       : skip pairwise groups during import
+% -type {[...], ...} : load specified population contributions 
 % 
 % Data processing options:
 % -noise 0.1 (µV) : define Gaussian noise amplitude
@@ -33,6 +34,8 @@ function [responses,config] = compose_waves(varargin)
 % -elec [...]    : define recording electrode pairs 
 %                   (synonymous with -chan, -pair)
 % -fasc [1:nF]   : reduce recording to the specified fascicle IDs
+% -filt          : apply filtering
+% -hz [low high order] : control filtering for waves
 % 
 % v0.4 CDE 07-Sep-2020
 varargin = tools.opts_to_args(varargin,'compose');
@@ -62,7 +65,7 @@ list = dir(data_('*.mat'));
 load(data_(list(1).name),'options')
 
 axon_type = options.class;
-aff = [options.afferent]; 
+aff = [options.afferent] == 1; 
 axon_type(aff)  = cellfun(@(s) sprintf('%s (A)',s), axon_type(aff),'unif',0);
 axon_type(~aff) = cellfun(@(s) sprintf('%s (E)',s), axon_type(~aff),'unif',0);
 
@@ -100,15 +103,15 @@ for aa = 1 : numel(wave_opts)
     
   W = wave_opts(aa);
 
-  if isnumeric(W.file_id), 
+  if isnumeric(W.file_id)
     file_list = W.file_id; 
-  elseif strncmpi(W.file_id,'first',2), 
+  elseif strncmpi(W.file_id,'first',2)
     file_list = ones(size(W.active_types)); 
-  elseif strncmpi(W.file_id,'all',2), 
+  elseif strncmpi(W.file_id,'all',2)
     file_list = (1:numel(list))' * ones(size(W.active_types)); 
   end
   
-%   if isnumeric(W.bipolar_pair), bipolar = W.bipolar_pair;
+%   if isnumeric(W.electrode), bipolar = W.electrode;
 %   else bipolar = [1 2; 3 4]; 
 %   end
     
@@ -129,7 +132,7 @@ for aa = 1 : numel(wave_opts)
   model = [];
   in = []; 
 
-  for f_row = 1:size(file_list,1), 
+  for f_row = 1:size(file_list,1)
     
     waves = [];
     spike = cell(1,nA); 
@@ -162,18 +165,18 @@ for aa = 1 : numel(wave_opts)
         % product at the boundary, use this to detrend: 
         in.waves = tools.detrend_wave(in.waves,in.time,roi);
         
-        if ischar(W.bipolar_pair)
-          W.bipolar_pair = reshape(1:size(in.waves,2),2,[])';
+        if ischar(W.electrode)
+          W.electrode = reshape(1:size(in.waves,2),2,[])';
         end
         
       end % load waves 
       
-      if isempty(nB), nB = size(W.bipolar_pair,1); end
+      if isempty(nB), nB = size(W.electrode,1); end
       
-      if ndims(in.waves) == 4, % waves ~ time, channel, fascicle, cell_type
+      if ndims(in.waves) == 4 % waves ~ time, channel, fascicle, cell_type
         if isnumeric(fascicle_ids)
           ok = (fascicle_ids <= size(in.waves,3));
-          if f_row == 1 && f_col == 1, 
+          if f_row == 1 && f_col == 1
             tools.printInfo('%s; F={%s%s} ] ',ones(7,1)*8,sprintf('%d,',fascicle_ids(ok)),8)
             tools.printInfo();
           end
@@ -203,19 +206,19 @@ for aa = 1 : numel(wave_opts)
     %% Then load baseline contributions 
     f_col = setdiff(1:nA,active_types);
     b_idx = ceil(rand(size(f_col)) * numel(base));
-    for ty = f_col,      
+    for ty = f_col      
       if isempty(base)        
         B.wave = zeros(size(waves)); 
-        B.spike{ty}.axon_index = ones(0,1);
-        B.spike{ty}.spike_fraction = ones(4,1);
-        B.spike{ty}.filename = 'empty';                
-        B.spike{ty}.dt_dx = ones(0,1);
-        B.spike{ty}.spike = [];
-        B.spike{ty}.axon_group = ones(1,0);        
+        B.spike(ty).axon_index = ones(0,1);
+        B.spike(ty).spike_fraction = ones(4,1);
+        B.spike(ty).filename = 'empty';                
+        B.spike(ty).dt_dx = ones(0,1);
+        B.spike(ty).spike = [];
+        B.spike(ty).axon_group = ones(1,0);        
       else B = base(b_idx(f_col == ty));       
       end
       waves(:,:,ty) = B.wave(:,:,ty); %#ok<AGROW>
-      spike{ty} = B.spike{ty};
+      spike{ty} = B.spike(ty);
     end    
     
     %% Merge waves based on bipolar config
@@ -233,7 +236,11 @@ for aa = 1 : numel(wave_opts)
     
     clear ty f_col b_idx B wraw ff ok
         
-    waves = waves(:,W.bipolar_pair(:,1)) - waves(:,W.bipolar_pair(:,2));
+    if size(W.electrode,2) > 1
+         waves = waves(:,W.electrode(:,1)) - mean(waves(:,W.electrode(:,2:end)));  
+    else waves = waves(:,W.electrode(:,1));      
+    end
+    
     waves = waves + randn(size(waves)) * W.input_noise; % Add gaussian noise
 
     this = struct;
@@ -305,22 +312,19 @@ if ~isempty(whos('-file',data_(list(1).name),'stimulus'))
   config.stimulus = in.stimulus;
 end
 
+if any(named('-filt'))
+  responses = arrayfun(@(d) apply_filter(d,config,varargin{:}), responses); 
+end
 
 return
 
 %% if -pdf or -plot requested, use this to make panels
 function make_wave_figure(do,this,W)
 
-persistent ps_folder
-if nargin == 0, ps_folder = []; return, end
-
+if nargin == 0, return, end
 
 if ischar(this) % 
-  if do.pdf
-   file = tools.file('get','Population_waves (%d).pdf','next');
-   combine_PStoPDF([tempdir ps_folder], file )
-   clc
-  end
+  if do.pdf, plots.PDF_tools('combine','Population_waves (%d).pdf'); end
   return
 end
 
@@ -330,7 +334,7 @@ ff = this.file(1);
 
 list = evalin('caller','list');
 time = evalin('caller','in.time(roi)');
-bipolar = W.bipolar_pair;
+bipolar = W.electrode;
 
 nB = size(this.wave,2); 
 C = lines(max(7,nB)); G = @(v) [v v v]/10;
@@ -340,12 +344,7 @@ figure(1), clf
 txt = sprintf(', %s', axon_type{active_type});  
 txt = sprintf('\\rm%s: %s', txt(3:end), strrep(list(ff).name,'_','\_'));
 
-if do.pdf  
- if isempty(ps_folder), ps_folder = 'make-pdf\'; 
-  if exist([tempdir ps_folder],'dir'), rmdir([tempdir ps_folder],'s'); 
-  end,                                 mkdir([tempdir ps_folder]);
- end
-end
+plots.PDF_tools('setup',do.pdf)
   
 nSP = 1 + do.plot_raster + do.get_spectra;
 if nSP == 4, subplot_ = @(n) subplot(2,2,n);
@@ -428,8 +427,8 @@ if do.get_spectra, subplot_(pid), cla, hold on  % Chronux spectrum
 end
 %%
 if do.pdf
-  ati = evalin('caller','aa');  
-     figs_to_ps(gcf,sprintf('%sw%03d-ty%02d-wave.ps',ps_folder,ff,ati),'-move');
+     ati = evalin('caller','aa');  
+     plots.PDF_tools(gcf,'w%03d-ty%02d-wave.ps',ff,ati)
      pause(0.1), close(gcf),  printInfo(); 
 else pause(0.1)
 end
@@ -491,7 +490,9 @@ config.id = find(config.id,1);
 config.path = w_dir; 
 
 % Remove extraneous formatting, leading text, and (etc) bits
-config.fmt = strtrim(regexprep(config.s(config.id).file_scheme,'\(.*','')); 
+if any(named('-schema')), config.fmt = get_('-schema');
+else config.fmt = strtrim(regexprep(config.s(config.id).file_scheme,'\(.*','')); 
+end
 config.fmt = regexprep(config.fmt,'^[^_]+_','_');
 config.fmt = regexprep(config.fmt,'%0?\.?\d*([df])','%$1');
 
@@ -574,7 +575,7 @@ for ff = 1:numel(active_type_list)
   this.file_id = 'all';
   this.active_types = active_type_list{ff};
   this.fascicle_ids = d.fascicle;
-  this.bipolar_pair = d.chan;  
+  this.electrode = d.chan;  
   this.input_shift = d.shift; 
   this.input_gain  = d.gain;
   this.input_noise = d.noise;
@@ -607,7 +608,8 @@ end
 if ~isfolder(base), base = tools.file('sub~\waves\base\'); end
 if ~isfolder(base), base = tools.file('sub~\waves\flat\'); end
 if any(named('-base')), base = get_('-base'); 
-   if any(base == '~'), base = tools.file(base); end   
+   if any(base == '~'), base = tools.file(base); end     
+   if strncmpi(base,'no',2), base = []; return; end
    if ~exist(base,'dir') && ~strcmpi(base,'self'), 
      base = [tools.file('waves~\') base]; 
    end
@@ -621,6 +623,9 @@ end
   
 if ~isfolder(base), % Not found or incorrectly specified
   
+  
+  if ~strncmpi(base,'auto',2), base = []; return; end
+
   if any(config.idx == 'b'), sr = config.metadata(:,config.idx == 'b');
   else                       sr = config.metadata(:,config.idx == 'k');
   end  
@@ -714,9 +719,6 @@ if ischar(W.(propName)), return, end
 if size(W.(propName),1) ~= size(W.file_id,1), return, end
 p = p(ff,:);
 
-
-
-
 function this = convert_spike_struct(spk, ref, dat)
 
 sel = cellfun(@(r) isfield(r,'bin_time'),ref);
@@ -777,3 +779,91 @@ this.pop_rate = this.pop_rate/dt * 1000 / numel(spk.axon_group);
 this.axon_group = spk.axon_group;
 
 return
+
+%% Filter output waves
+function [resp,info] = apply_filter(resp,info,varargin)
+%%
+persistent did_announce
+if nargin == 0, did_announce = []; return, end
+
+named = @(v) strncmpi(v,varargin,length(v)); 
+get_ = @(v) varargin{find(named(v))+1};
+
+default_order = 2; 
+
+f_opts = [500 3000 default_order]; % BI default filtering
+
+if any(named('-hz')), f_opts = get_('-hz'); end
+
+if numel(f_opts) == 1, f_opts = [0 f_opts default_order];
+elseif numel(f_opts) == 2, f_opts(3) = default_order;
+end
+
+n = abs(f_opts(3)); 
+dt = mean(diff(info.time)) / 1e3;
+  
+if f_opts(1) == 0
+  fd = fdesign.lowpass('N,F3db',n,f_opts(2),1/dt);
+  info.filter.hz = f_opts(2);
+  info.filter.order = f_opts(3);
+  info.filter.type = 'lowpass butterworth';
+elseif f_opts(2) == 0    
+  fd = fdesign.highpass('N,F3db',n,f_opts(1),1/dt);
+  info.filter.hz = f_opts(1);
+  info.filter.order = f_opts(3);
+  info.filter.type = 'highpass butterworth';
+else     
+  fd = fdesign.bandpass('N,F3dB1,F3dB2',n,f_opts(1),f_opts(2),1/dt);    
+  info.filter.hz = f_opts(1:2);
+  info.filter.order = f_opts(3);
+  info.filter.type = 'bandpass butterworth';
+end
+
+if isempty(did_announce)
+  fprintf('Filtering wave, %d - %d Hz\n', f_opts(1:2))
+  did_announce = 1;
+end
+
+Hd = fd.design('butter'); 
+set(Hd,'Arithmetic','double');  
+[b,a] = sos2tf(Hd.sosMatrix, Hd.ScaleValues);
+
+%%
+[resp.w_raw] = deal([]); 
+
+for ii = 1:numel(resp)
+  
+  if isempty(resp(ii).w_raw)
+    resp(ii).w_raw = resp(ii).wave;
+  end
+  
+  wave = resp(ii).w_raw;
+
+  if f_opts(3) > 0, wave = flipud(wave); end  
+  
+  if any(named('-zerolag')) % this should /really/ be default... 
+    for pp = 1:size(wave,2)  
+        wave(:,pp) = cast(filtfilt(b,a,double(wave(:,pp))),'like',wave);  
+    end  
+  else
+    for pp = 1:size(wave,2)  
+        wave(:,pp) = cast(filter(b,a,double(wave(:,pp))),'like',wave);  
+    end
+  end
+  if f_opts(3) > 0, wave = flipud(wave); end
+  
+  if any(~isfinite(wave(:)))    
+    [ty,pp] = ind2sub(size(wave),ii);    
+    warning('NaN or Inf in wave_stim-%d_axons-%d', pp, ty)
+  end
+  
+  if any(named('-debug-filter'))
+    %%
+    clf
+    plot(info.time,resp.w_raw(:,end))
+    hold on, axis(axis)
+    plot(info.time,wave(:,end))
+  end
+  
+  resp(ii).wave = wave;   
+end

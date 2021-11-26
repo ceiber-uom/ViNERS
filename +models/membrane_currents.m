@@ -23,6 +23,7 @@ cd(tools.file('~/code/'))
 
 % get source filename
 if any(named('-file')), index_file = get_('-file'); 
+elseif any(named('-ax')), index_file = get_('-ax'); 
 else index_file = tools.file('get','axons~/axon*.mat','newest'); 
 end
 if any(index_file == '~'), index_file = tools.file(index_file); end
@@ -36,8 +37,12 @@ load(index_file,'pop');
 FULL_axon_population = pop; 
 merge_populations('reset'); 
 
+if any(named('-downs')), pop = downsample_axons(pop,get_('-downs')); end
+
+
 axon_type_list = unique({pop.axon_model});
-output_stub = regexp(index_file,'(?<=\()[^\)]+','match','once'); 
+output_stub = regexp(index_file,'(?<=[\\/])[^\\/]+$','match','once'); 
+output_stub = regexp(output_stub,'(?<=\()[^\)]+','match','once'); 
 
 for axon_type = axon_type_list
   
@@ -75,20 +80,22 @@ for axon_type = axon_type_list
   %% Run a membrane current output for each sample of axons
   % nG = length(sam.count); 
 
-  mdl_args = {[],pop.axon_model,'-current','-constantLength',8};
-  if any(named('-debug')), mdl_args = [mdl_args {'-debug'}]; end           %#ok<AGROW>
-  if any(named('-arg')), extra_args = get_('-arg'); 
+  model_args = {[],pop.axon_model,'-current','-constantLength',8};
+  if any(named('-f-len')),  model_args{end} = get_('-f-len'); end
+  if any(named('-debug')),  model_args = [model_args {'-debug'}]; end      %#ok<AGROW>
+  if any(named('-arg')),    extra_args = get_('-arg'); 
     if ~iscell(extra_args), model_args = [model_args extra_args];          %#ok<AGROW>
-    else model_args = [model_args extra_args{:}];                          %#ok<AGROW>
+    else                    model_args = [model_args extra_args{:}];       %#ok<AGROW>
     end
   end
   
   if pop.myelinated
-      run_model = @(g) models.axon_model(sam.subtype_id(g),mdl_args{:}, ...
+      run_model = @(g) models.axon_model(sam.subtype_id(g),model_args{:}, ...
                                'fibreDiam',sam.fibre_diam(g), ...
                                  'g_ratio',sam.g_ratio(g));
-  else mdl_args{5} = 6; % default length 6 mm
-      run_model = @(g) models.axon_model(sam.subtype_id(g),mdl_args{:}, ...
+  else
+      if ~any(named('-f-len')), model_args{5} = 6; end % default length 6 mm (but don't override custom value)
+      run_model = @(g) models.axon_model(sam.subtype_id(g),model_args{:}, ...
                                'fibreDiam',sam.fibre_diam(g));      
   end
 
@@ -100,7 +107,7 @@ for axon_type = axon_type_list
   
   if any(named('-no-p'))
     for gg = 1:nG, results{gg} = feval(run_model,gg); end     
-  elseif isempty(strfind(ctfroot, 'MATLAB')) %#ok<STREMP> % octave parallel
+  elseif tools.isOctave % octave parallel
     if isempty(which('pararrayfun')), pkg load parallel; end
     
     results = pararrayfun(nproc-1, @(a) { tools.cache('set',cache_path), ...
@@ -110,7 +117,7 @@ for axon_type = axon_type_list
     results = [results{2:2:end}]; % convert to struct array      
   else                     
     set_cache = @() tools.cache('set',cache_path); 
-    parfor gg = 1:nG,
+    parfor gg = 1:nG
       set_cache(); % otherwise files get lost
       results{gg} = feval(run_model,gg); 
     end
@@ -189,6 +196,71 @@ results(missing,:) = mresults;
 clear u fin missing mresults
 
 
+function [pop] = downsample_axons(pop,fraction)
+% [pop,sam] = downsample_axons(pop,sam,get_('-downs'));
+
+nType = numel(pop);
+nF = max(cat(1,pop.fascicle));
+if numel(fraction) == 1, fraction = repmat(fraction, nType, 1); end
+
+f_sum_ = @(f_id) arrayfun(@(f) sum(f_id == f), 1:nF);
+[pop.source_total] = deal(0);
+[pop.source_index] = deal(0);
+
+for ty = 1:nType
+  
+  pop(ty).source_total = f_sum_(pop(ty).fascicle);
+  pop(ty).source_index = (1:numel(pop(ty).fascicle))';
+  
+  if fraction(ty) == 1, continue, end
+  if fraction(ty) > 1, fraction(ty) = 1/fraction(ty); end
+  
+  this = pop(ty);
+  
+  values = [this.fibre_diam this.axon_diam this.g_ratio this.axon_xy];
+  values = zscore(values);
+  
+  sample = false(size(values(:,1))); 
+  
+  for ff = 1:nF % get samples within each fascicle 
+    
+    f_sel = (this.fascicle == ff);
+      
+    target = ceil(fraction(ty) * sum(f_sel));
+    v = values(f_sel,:);
+    
+    typ = nanmedian(v);
+    [~,sel] = min(sum((v-typ).^2,2));  
+
+    extrema = [];
+    [~,extrema(:,1)] = min(v); 
+    [~,extrema(:,2)] = max(v); 
+    extrema = unique(reshape(extrema,[],1)); 
+
+    while numel(sel) < target
+
+      u = arrayfun(@(s) sum((v - v(s,:)).^2,2), sel, 'unif',0);    
+      e = arrayfun(@(s) sum((v - v(s,:)).^2,2), extrema, 'unif',0);
+      d = mean([u{:} 0.2*[e{:}]],2); d(sel) = nan; 
+      [~,ix] = nanmax(d); 
+      sel = [sel; ix];  %#ok<AGROW>
+    end
+    
+    f_sel = find(f_sel);
+    sample(f_sel(sel)) = true; 
+  end
+  
+  clear u e d v keep sel typ ix st sf target extrema ff f_sel
+  
+  for y = fieldnames(this)'
+    if size(this.(y{1}),1) ~= size(sample,1), continue, end
+    this.(y{1}) = this.(y{1})(sample,:);
+  end
+  
+  this.source_index = find(sample);
+  
+  pop(ty) = this;
+end
 
 %% All axon populations with a certain axon model
 function [pop,sam] = merge_populations(pop,axon_type)

@@ -32,16 +32,27 @@ elseif isfield(data,'Children') % most likely XML
     xy_ = @(x,n) arrayfun(@(p) str2double(p.Attributes(n).Value), x);
     
     profiles = the(data,'contour');
-    names = arrayfun(@(p) attr_(p,'Name'),profiles,'unif',0);     
+    names = lower(arrayfun(@(p) attr_(p,'Name'),profiles,'unif',0));
     fasc_idx = str2double(regexp(names,'(?<=ior-)\d+','match','once'));
-    widths = zeros(max(fasc_idx),1);
+    
+    if all(isnan(fasc_idx))
+        fasc_idx = determine_fascicle_index(profiles);
+    end
+    
+    widths = zeros(nanmax(fasc_idx),1);
+    
+    if any(contains(names,'interior')) && any(contains(names,'exterior'))        
+         inner = 'interior';   outer = 'exterior';
+    else inner = 'inner peri'; outer = 'outer peri';
+    end
     
     for ff = 1:max(fasc_idx)
         
         sel = (fasc_idx == ff); 
         
-        xy_fasc = profiles(sel & contains(names,'Interior'));
-        xy_peri = profiles(sel & contains(names,'Exterior'));
+        xy_fasc = profiles(sel & contains(names,inner));
+        xy_peri = profiles(sel & contains(names,outer));
+        
         
         if numel(xy_fasc) ~= 1 || numel(xy_peri) ~= 1
           warning('Fascicle #%d: found %d interior, %d exterior loops', ...
@@ -65,6 +76,40 @@ end
 
 return
 
+
+function index = determine_fascicle_index(profiles)
+
+index = zeros(size(profiles)); 
+
+% XML handler microfunctions 
+the = @(x,n) x.Children(strncmpi({x.Children.Name},n,length(n)));
+attr_ = @(x,n) x.Attributes(strcmpi(n,{x.Attributes.Name})).Value;
+xy_ = @(x,n) arrayfun(@(p) str2double(p.Attributes(n).Value), x);
+
+idx_inner = false(size(index)); 
+centroid = zeros(numel(index),3);
+
+for ii = 1:numel(profiles)
+  name = lower(attr_(profiles(ii),'name'));
+  point = the(profiles(ii),'point'); 
+  for d = 1:3
+    centroid(ii,d) = mean(arrayfun(@(p) xy_(p,d), point));
+  end
+  if contains(name,'inner')
+    idx_inner(ii) = true; 
+    index(ii) = max(index(idx_inner)) + 1;    
+  end
+end
+
+for ii = 1:numel(profiles)
+   name = lower(attr_(profiles(ii),'name'));
+   if contains(name,'outer')
+       [~,sel] = nanmin(sum((centroid-centroid(ii,:)).^2,2) ./ idx_inner');       
+       index(ii) = index(sel);
+   end
+end
+
+return
 
 function [mean_pw,pw] = pw_from_outline(fasc,peri)
 

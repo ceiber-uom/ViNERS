@@ -15,131 +15,145 @@ if strncmpi(fliplr(filename),'oeg.',4) % .geo extension
     filename = strrep(filename,'.geo','.msh'); 
 end
 
+thinMeshMat_file = strrep(filename,'.msh','-thin.msh.mat');
 
-if ~exist(filename,'file'), 
-  error('could not find mesh file "%s"',filename)
-end
-
-fprintf('Reading "%s" ...\n', filename)
-
-
-[~,nodes,~,object] = mesh.gmsh_read_mesh(filename,true); % <<<< EIDORS call
-
-% WARNING to future users: as of May 2020, there's been a lot of work and 
-% development of gmsh_read_mesh in EIDORS to handle the different file
-% versions of the .msh file output by GMSH. I've got a hacked version of
-% gmesh_read_mesh which I shared with the EIDORS community but there's no
-% garuntee that future versions of GMSH or EIDORS will not crash here.
-% 
-% If you can't get this working, contact me to get my hacked
-% gmsh_read_mesh, which worked with GMSH version 4.4.1 - CDE
-%   $MeshFormat 4.1 0 8
-
-while any(named('-n')) % Rename GMSH output objects if needed 
-   disp('Overwriting physical volume names from gmsh file:')
-   newname = varargin{find(named('-n'))+1};
-   if any([newname{:}] == ':') % defines string-based renaming
-       
-       if any(cellfun(@(s) ~any(s==':'), newname)) || ...
-                    numel(newname) < numel(object)
-           cellfun(@disp, {object.name})
-           error('all objects must be included in name list')
-       end
-       
-       seq = cellfun(@(s) find(strncmpi({object.name}, s, ...
-                                         find(s==':')-1)), newname);
-       newname(seq) = regexprep(newname,'^[^:]+:','');
-   end
-   
-   for ii = 1:numel(object)
-     if ii > numel(newname) || isempty(newname{ii})
-       fprintf('%2d: %8s -> [unchanged]\n',ii,object(ii).name)
-       continue
-     end
-     fprintf('%2d: %8s -> %s\n',ii,object(ii).name, newname{ii})
-     object(ii).name = newname{ii};
-   end
-   break
-end
-
-do_thin_layer = strncmpi({object.name},'P_',2);
-
-if ~any(do_thin_layer)    
-    warning('mk_thinLayer:nada',['No patch layers imported from gmsh ' ...
-         '(looking for "P_[name]", where [name] is interior of patch)' ...
-         ' try using -name to renamed these %d objects?'], numel(object))
-end
-
-if nargin > 1, layer_thickness = varargin{1}; 
-else           layer_thickness = 1e-3; % 5e-3; 
-end
-
-%%
-if 0 % Plot mesh to be thin-layered
-  %%  
-  clf, xyz = nodes.xyz; %#ok<UNRCH>
-  trimesh(object(find(do_thin_layer,1)).nodes,xyz(:,1),xyz(:,2),xyz(:,3),'Clipping','off')
-  axis equal off, hold on  
-  if exist('ee','var')  
-    axis(xyz(ee,[1 1 2 2 3 3]) +[-.1 .1 -.1 .1 -.1 .1])  
-    plot3(xyz(ee,1),xyz(ee,2),xyz(ee,3),'rs','Clipping','off')
-    plot3(xyz(eid,1),xyz(eid,2),xyz(eid,3),'r.','Clipping','off')  
-    plot3(xyz(ee,1)+[0 0.02*dv(1)],xyz(ee,2)+[0 0.02*dv(2)],xyz(ee,3)+[0 0.02*dv(3)],'k-','Clipping','off')    
-  end
-  % if ei == nP, plot3(xyz0(:,1),xyz0(:,2),xyz0(:,3),'.','Clipping','off')
-  % end
-end
-
-if all(layer_thickness == 0), do_thin_layer(:) = false; end
-if numel(layer_thickness) == 1, 
-  layer_thickness = layer_thickness * ones(1,sum(do_thin_layer)); 
-end
-
-% persistent DEBUG_PERM DEBUG_PID
-% if isempty(DEBUG_PERM), DEBUG_PERM = flipud(perms(1:4)); DEBUG_PID = 1;
-% else DEBUG_PID = DEBUG_PID + 1;
-% end
-
-compound = []; 
-
-%%
-for ff = find(do_thin_layer) % Generate thinlayers 
-  %%
+if exist(thinMeshMat_file,'file') % already did slow part
   
-  if object(ff).dim == 3
-      warning('mk_thinLayer:not2d', ...
-              'Object %d (%s) has dimension %d (expected %d)' , ...
-                      ff, object(ff).name, object(ff).dim,2)
-      continue
-  end
-    
-  if ~isempty(compound)
-    error TODO_check_compound_strucutres
-  end
-    
-  if isempty(object(ff).nodes) % GMSH doesn't always export correctly
-    object = find_object_boundary(nodes, object, ff); 
-  end
-      
-  if any(named('-c')) 
-    [nodes, object, compound] = insert_compound_boundary(nodes,  ...
-            object, compound, ff, do_thin_layer, layer_thickness); 
-    error TODO_validate_multifascicle_thinlayer_mesh_sub-130
-    
-  else 
-    % warning('a:b','DEV-MODE skipping normal fascicle %d', ff)
-    % continue
-    
-    width = layer_thickness(find(do_thin_layer) == ff);    
-    [nodes, object] = insert_simple_boundary(nodes, object, ff, width); 
+  fprintf('Reading "%s" ...\n', thinMeshMat_file)
+
+  load(thinMeshMat_file,'object','nodes'); 
+
+else
+
+
+  if ~exist(filename,'file'), 
+    error('could not find mesh file "%s"',filename)
   end
 
-  if exist('DEBUG_PERM','var'), break,  end  
+  fprintf('Reading "%s" ...\n', filename)
+
+  [~,nodes,~,object] = mesh.gmsh_read_mesh(filename,true); % <<<< EIDORS call
+
+  % WARNING to future users: as of May 2020, there's been a lot of work and 
+  % development of gmsh_read_mesh in EIDORS to handle the different file
+  % versions of the .msh file output by GMSH. I've got a hacked version of
+  % gmesh_read_mesh which I shared with the EIDORS community but there's no
+  % garuntee that future versions of GMSH or EIDORS will not crash here.
+  % 
+  % If you can't get this working, contact me to get my hacked
+  % gmsh_read_mesh, which worked with GMSH version 4.4.1 - CDE
+  %   $MeshFormat 4.1 0 8
+
+  while any(named('-n')) % Rename GMSH output objects if needed 
+     disp('Overwriting physical volume names from gmsh file:')
+     newname = varargin{find(named('-n'))+1};
+     if any([newname{:}] == ':') % defines string-based renaming
+
+         if any(cellfun(@(s) ~any(s==':'), newname)) || ...
+                      numel(newname) < numel(object)
+             cellfun(@disp, {object.name})
+             error('all objects must be included in name list')
+         end
+
+         seq = cellfun(@(s) find(strncmpi({object.name}, s, ...
+                                           find(s==':')-1)), newname);
+         newname(seq) = regexprep(newname,'^[^:]+:','');
+     end
+
+     for ii = 1:numel(object)
+       if ii > numel(newname) || isempty(newname{ii})
+         fprintf('%2d: %8s -> [unchanged]\n',ii,object(ii).name)
+         continue
+       end
+       fprintf('%2d: %8s -> %s\n',ii,object(ii).name, newname{ii})
+       object(ii).name = newname{ii};
+     end
+     break
+  end
+
+  do_thin_layer = strncmpi({object.name},'P_',2);
+
+  if ~any(do_thin_layer)    
+      warning('mk_thinLayer:nada',['No patch layers imported from gmsh ' ...
+           '(looking for "P_[name]", where [name] is interior of patch)' ...
+           ' try using -name to renamed these %d objects?'], numel(object))
+  end
+
+  if nargin > 1, layer_thickness = varargin{1}; 
+  else           layer_thickness = 1e-3; % 5e-3; 
+  end
+
+  %%
+  if 0 % Plot mesh to be thin-layered
+    %%  
+    clf, xyz = nodes.xyz; %#ok<UNRCH>
+    trimesh(object(find(do_thin_layer,1)).nodes,xyz(:,1),xyz(:,2),xyz(:,3),'Clipping','off')
+    axis equal off, hold on  
+    if exist('ee','var')  
+      axis(xyz(ee,[1 1 2 2 3 3]) +[-.1 .1 -.1 .1 -.1 .1])  
+      plot3(xyz(ee,1),xyz(ee,2),xyz(ee,3),'rs','Clipping','off')
+      plot3(xyz(eid,1),xyz(eid,2),xyz(eid,3),'r.','Clipping','off')  
+      plot3(xyz(ee,1)+[0 0.02*dv(1)],xyz(ee,2)+[0 0.02*dv(2)],xyz(ee,3)+[0 0.02*dv(3)],'k-','Clipping','off')    
+    end
+    % if ei == nP, plot3(xyz0(:,1),xyz0(:,2),xyz0(:,3),'.','Clipping','off')
+    % end
+  end
+
+  if all(layer_thickness == 0), do_thin_layer(:) = false; end
+  if numel(layer_thickness) == 1, 
+    layer_thickness = layer_thickness * ones(1,sum(do_thin_layer)); 
+  end
+
+  % persistent DEBUG_PERM DEBUG_PID
+  % if isempty(DEBUG_PERM), DEBUG_PERM = flipud(perms(1:4)); DEBUG_PID = 1;
+  % else DEBUG_PID = DEBUG_PID + 1;
+  % end
+
+  compound = []; 
+
+  %%
+  for ff = find(do_thin_layer) % Generate thinlayers 
+    %%
+
+    if object(ff).dim == 3
+        warning('mk_thinLayer:not2d', ...
+                'Object %d (%s) has dimension %d (expected %d)' , ...
+                        ff, object(ff).name, object(ff).dim,2)
+        continue
+    end
+
+    if ~isempty(compound)
+      error TODO_check_compound_strucutres
+    end
+
+    if isempty(object(ff).nodes) % GMSH doesn't always export correctly
+      object = find_object_boundary(nodes, object, ff); 
+    end
+
+    if any(named('-c')) 
+      [nodes, object, compound] = insert_compound_boundary(nodes,  ...
+              object, compound, ff, do_thin_layer, layer_thickness); 
+      error TODO_validate_multifascicle_thinlayer_mesh_sub-130
+
+    else 
+      % warning('a:b','DEV-MODE skipping normal fascicle %d', ff)
+      % continue
+
+      width = layer_thickness(find(do_thin_layer) == ff);    
+      [nodes, object] = insert_simple_boundary(nodes, object, ff, width); 
+    end
+
+    if exist('DEBUG_PERM','var'), break,  end  
+  end
+
+  %% convert to EIDORS model struct and save 
+
+  clear ff node list enew xyz0 nP adj ei eid ee tt dv loc vol sel adj etet
+
+  save(thinMeshMat_file,'object','nodes')
+
 end
 
-%% convert to EIDORS model struct and save 
-
-clear ff node list enew xyz0 nP adj ei eid ee tt dv loc vol sel adj etet
 em = construct_fwd_model(object,nodes); 
 
 
@@ -168,7 +182,7 @@ if exist('DEBUG_PERM','var')
     clear, return
 end
 
-filename = strrep(filename,'.msh','-thin.msh.mat'); 
+filename = strrep(filename,'.msh','-thin.mdl.mat'); 
 fprintf('Saving "%s" ...\n', filename)
 save(filename,'-struct','em')
 
@@ -437,6 +451,16 @@ return
 function [mat_indices, order] = mk_mat_indices( object )
 
     sel = find([object.dim] == 3);
+    
+    if any(cellfun(@isempty,{object(sel).nodes}))
+        bad = cellfun(@isempty,{object.nodes});
+        bad = sprintf(',%s',object(bad).name);
+        
+        error('Empty physical domains: {%s}. Usually this indicates %s', ...
+               bad(2:end),'a serious issue with the model geometry.')
+        
+    end
+    
     % & ~cellfun(@isempty,{object.nodes}));  ... if this is true there may
     % be other bad issues with the gmsh code? 
     

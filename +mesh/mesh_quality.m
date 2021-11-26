@@ -8,7 +8,8 @@ function q = meshQuality(file)
 % average quality~0.887
 
 if nargin == 0 || ~isfile(file)
-  file = tools.file('~\source\mesh\pelvic_nerve-thin.msh.mat');
+  file = tools.file('eidors~\*.mat','prompt'); 
+  % file = tools.file('~\source\mesh\pelvic_nerve-thin.msh.mat');
 end
 
 

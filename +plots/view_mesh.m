@@ -6,6 +6,10 @@ function view_mesh(filename,varargin)
 % -fascicle shows fascicles in blue
 % -animate animates each named object from GMSH
 % -no-elec hides electrodes (if relevent)
+% -no-carrier hides the electrode carrier (if relevent)
+% -section [z] generates a mk_transverse_section (untested)
+% 
+% Updated 18-Nov-2021 CDE V0.3
 
 if nargin > 0 && ischar(filename) && ~isempty(filename) && filename(1) == '-'
   varargin = [{filename} varargin]; filename = ''; 
@@ -26,12 +30,14 @@ if exist('m','var') % arg-in supplied
 elseif strncmpi(fliplr(filename),'oeg.',4) % .GEO file
 
   m = load(regexprep(filename,'\..*$','-thin.msh.mat')); 
+  
   m.boundary_numbers = ones(size(m.boundary(:,1)));
   
 elseif strncmpi(fliplr(filename),'tam.',4) % .MAT file
  
   m = load(filename);
   if isfield(m,'model'), m = m.model; end
+  if isfield(m,'fwd_model'), m = m.fwd_model; end
   if ~isfield(m,'boundary_numbers'), 
     m.boundary_numbers = ones(size(m.boundary(:,1)));
   end
@@ -77,7 +83,7 @@ if any(named('-f'))
   
 end
 
-if ~(any(named('-no-p')) || any(named('-nop')))
+if ~any(named('-no-c'))
 
   sel = cat(1,m.object_id{strncmp(m.object_name,'PDMS',4)});
   patch('Faces',tet2tri(m.elems(sel,:)),'Vertices',m.nodes,'EdgeColor',[1 .96 .7], ...

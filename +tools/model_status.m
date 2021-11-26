@@ -96,7 +96,7 @@ for step_id = 1 : numel(model_steps)
   request = cellfun(@(a) any(cellfun(@(b) any(strncmpi(a, b, numel(b))), ...
                                    model_steps{step_id})), stage); 
   if ~any(request), continue, end
-  printf('%-20s %s\n', model_steps{step_id}{end}, status{find(request,1)})
+  printf('%-18s %s  %s\n', model_steps{step_id}{end},label, status{find(request,1)})
 end
 
 if any(named('done')),      status = strcmp(status,'done');
@@ -187,32 +187,42 @@ while 1 % switch index ... break
 
    case 7 % nerve_stimulation
        
-     d = get_axons_file(list, label); 
-     if isempty(d), status = {'not ready'}; break, end
 
      if isempty(label), in = '[^/]*'; 
      elseif ~any(label == '('), in = ['[^/]*\(' label '\)[^/]*']; 
-     else in = label; 
+     else in = regexprep(label,'([\(\)\[\]])','\\$1'); 
      end     
      subset = list(find_(list,['^/stim[^/]*/' in]));
+     if isempty(subset) && ~any(label == '(')
+       % not obliged to be of the form /stim/stub(label)
+       subset = list(find_(list,['^/stim[^/]*/' label '/']));
+     end
      
+     d = get_axons_file(list, ''); 
+
      if isempty(subset), 
        ok = simple_check(list, '', '/eidors/stim[^/]*.mat');
-       if strcmp(ok{1},'missing'), status = {'not ready'};
-       else                        status = {'missing'};
-       end,                        break
+       if strcmp(ok{1},'missing'), status = {'not ready'}; break, end
+       
+       if isempty(d), status = {'not ready'}; 
+       else           status = {'missing'}; 
+       end
+       
+       break
      end
      
      %% Check each fascicle
-     nF = size(d.nerve.outline,3); 
-     axon_models = unique({d.pop.axon_model}); 
-     for aa = 1:numel(axon_models) % check each model
-        n_items = sum(find_(subset,axon_models{aa}));
-        if n_items < nF, 
-            status = {sprintf('incomplete (%s %d/%d fascicles)', ...
-                               axon_models{aa}, n_items, nF)}; 
-            break
-        end
+     if ~isempty(d)
+       nF = size(d.nerve.outline,3); 
+       axon_models = unique({d.pop.axon_model}); 
+       for aa = 1:numel(axon_models) % check each model
+         n_items = sum(find_(subset,axon_models{aa}));
+         if n_items < nF, 
+           status = {sprintf('incomplete (%s %d/%d fascicles)', ...
+                              axon_models{aa}, n_items, nF)}; 
+           break
+         end
+       end
      end
      if isempty(status), status = {'done'}; end
 

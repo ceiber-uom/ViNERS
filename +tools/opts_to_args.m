@@ -32,21 +32,38 @@ function list = opts_to_args(args,fields,varargin)
 % 
 % v0.1 CDE 23-June-2021
 
+% Actual usage (internal to ViNERS functions): 
+% 
+% at the top of the function to accept an options structure: 
+% 
+% varargin = tools.opts_to_args(varargin,'field1','field2', ... );
+% named = @(v) strncmpi(v,varargin,length(v)); 
+% get_ = @(v) varargin{find(named(v))+1};
+
+
 
 if nargin == 0, list = {}; return, end
 if isempty(args), list = {}; return, end
+if isstruct(args), args = {args}; end
 list = args;
 
-if any(strncmpi(list,'--no-s2a',8)), return, end % directive to skip
+named = @(v) strncmpi(v,[args varargin],length(v)); 
 
-if ~isstruct(args{1}), return, end
+if any(named('--no-s2a')), return, end % directive to skip
+
+index = cellfun(@ischar,args); % first not-filename argument
+index(index) = cellfun(@(a) exist(a,'file')>0, args(index)); 
+index = find(~index,1);
+
+if ~any(index), return, end
+if ~isstruct(args{index}), return, end
 if ~iscell(fields), fields = {fields}; end
 if nargin > 2, fields = [fields varargin]; end
 
-if ~any(strncmpi(list,'--no-sALL',8)), fields = [fields {'all'}]; end % directive to skip
+if ~any(named('--no-sALL')), fields = [fields {'all'}]; end % directive to skip
 
-opts = args{1}; % input options structure
-if ~any(isfield(opts,fields))
+opts = args{index}; % input options structure
+if ~any(isfield(opts,fields))    
     
   if isfield(opts,'name') && isfield(opts,'folder') && ...
      isfield(opts,'isdir') && isfield(opts,'datenum')
@@ -61,8 +78,8 @@ if ~any(isfield(opts,fields))
 end
 
 %%
-skip_if_found = ~any(strncmpi(list,'--s2a-first',8));
-
+skip_if_found = ~any(named('--s2a-first'));
+replace_underscore = ~any(named('--s2a-keep'));
 
 for ff = numel(fields):-1:1 % reverse order
     if ~isfield(opts,fields{ff}), continue, end % missing
@@ -72,7 +89,12 @@ for ff = numel(fields):-1:1 % reverse order
     end
     for name = fieldnames(opts.(fields{ff}))' 
       
-      argname = ['-' strrep(name{1},'_','-')];
+      if replace_underscore
+        argname = ['-' strrep(name{1},'_','-')];
+        argname = strrep(argname,'-[-]+','_');
+      else argname = name{1}; 
+      end
+
       argval  = opts.(fields{ff}).(name{1});
       idx = strncmpi(list,argname,numel(name{1})+1);
       if any(idx), 
@@ -85,9 +107,7 @@ for ff = numel(fields):-1:1 % reverse order
     end
 end
 
-
-
-list(1) = [];
+list(index) = [];
 
 return
 

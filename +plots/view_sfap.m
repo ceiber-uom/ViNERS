@@ -1,13 +1,36 @@
 function view_sfap(varargin)
+% function view_SFAP([filename], ...)
+% 
+% Load a SFAP file and visualise the computed SFAPs
+% 
+% OPTIONS: 
+% -wave : also plot waves figure showing shape of SFAP
+% -anat [nerve] : use specified nerve cross-section 
+%                 (output of plots.preview_fascicles)
+% -chan [elec], -elec [elec] : use specified recording montage
+% -fasc [fid] : show SFAPs from specified fascicles 
+% -dc, -vdc   : plot SFAP mean DC voltage (default: peak-peak voltage)
+% -mf         : force multifascicle plot even if only 1 fascicle is picked
+% -bi         : compute a bipolar montage recording (default: monopolar)
+% -im         : generate an image raster showing SFAP results
+% -ty [type]  : show SFAPS of specified axon model (default: MRG)
+% -res [r]    : resolution of SFAP image for -im
+% 
+% -hz [filterspec]  : apply specified (butterworth) filtering
+% -sg [size_sample] : select a specific subgroup (axon diam and g-ratio) 
+%                     to display SFAPs for
+% -pk-qunatile [vals] : filter SFAP by chosing quantiles for Vpp calc
+% 
+% V0.1 CDE 18-Nov-2021
 
 named = @(v) strncmpi(v,varargin,length(v)); 
 get_ = @(v) varargin{find(named(v))+1};
 
 % files or gather from input
 if nargin > 0, file = varargin{1}; else file = {}; end
-if isempty(file) || file(1) == '-',
-   file = {'sensitivity*.mat'}; 
-   if any(named('-af')), file = file([2 1]); end
+if isempty(file) || file(1) == '-' || strcmp(file,'?')
+   file = {'*.mat'}; 
+   % if any(named('-af')), file = file([2 1]); end
   [file,folder] = uigetfile(file,[],tools.file('sfap~\'));
   if all(folder == 0), return, end % cancelled
   disp(file)
@@ -43,16 +66,20 @@ opts.do_vdc = any(named('-dc')) || any(named('-vdc'));
 opts.do_image = any(named('-im')); 
 opts.force_mf = any(named('-mf'));
 opts.do_bipolar = any(named('-bi'));
+opts.do_wave = any(named('-wav'));
+
 
 opts.axon_type = 'MRG'; % default axon class
 opts.xy_res = 61 * opts.do_image; % native resolution 
 opts.pk_quantile = 1;
 opts.filter_hz = []; % no filter 
+opts.subgroup = []; % no selection
 
 if any(named('-ty')), opts.axon_type = get_('-ty'); end
 if any(named('-res')), opts.xy_res = get_('-res'); end
 if any(named('-pk-q')), opts.pk_quantile = get_('-pk-q'); end
 if any(named('-hz')), opts.filter_hz = get_('-hz'); end
+if any(named('-sg')), opts.subgroup = get_('-sg'); end
 
 clf, choose_sfap_figure(dat,opts)
 
@@ -72,7 +99,7 @@ if nargin < 1 && evalin('caller','exist(''dat'',''var'')')
 end
 
 if numel(opts.fascicle) > 1 || ...  % Generate multiple-fascicle figure
-   numel(opts.electrode) > 1 || opts.force_mf,
+   numel(opts.electrode) > 1 || opts.force_mf
       make_panels_multiFascicle(dat,opts)
 else  make_panels_interactive(dat,opts);
 end
@@ -94,8 +121,11 @@ if nP == 1, nP = opts.xy; end
 
 c_sel = strncmp({dat.axons.class},opts.axon_type,length(opts.axon_type));
 if ~any(c_sel)
-  c_sel = sprintf('|%s',dat.axons.class);
-  error('Invalid axon type. Use -ty ''%s''. Requested: "%s"',c_sel(2:end),opts.axon_type)
+  if isnumeric(opts.axon_type), c_sel = opts.axon_type;
+  else
+    c_sel = sprintf('|%s',dat.axons.class);
+    error('Invalid axon type. Use -ty ''%s''. Requested: "%s"',c_sel(2:end),opts.axon_type)
+  end
 elseif sum(c_sel) > 1
   c_sel = find(c_sel,1);
   warning('Multiple options for -ty "%s", using "%s"', opts.axon_type, ...
@@ -117,6 +147,20 @@ for ee = 1:nE
     
     ff = opts.fascicle(f0); 
     fok = axons.axon.fascicle == ff; 
+    if ~isempty(opts.subgroup)
+      fok = fok & ismember(axons.axon.subtype, opts.subgroup); 
+      if f0 == 1        
+       for gg = reshape(opts.subgroup,1,[])
+        if isfield(axons.axon,'g_ratio')
+             fprintf('%s #%d: FD %0.3f um, g %0.3f\n', axons.class, gg, ...
+                    axons.axon.diameter(axons.axon.subtype_index == gg),...
+                     axons.axon.g_ratio(axons.axon.subtype_index == gg))
+        else fprintf('%s #%d: FD %0.3f um, g %0.3f\n', axons.class, gg, ...
+                    axons.axon.diameter(axons.axon.subtype_index == gg))
+        end
+       end
+      end    
+    end
       
     if ~isfield(axons,'axon_SFAP')
       error TODO_compute_axons_SFAP_field_from_component_SFAP
@@ -189,6 +233,26 @@ for ee = 1:nE
        colormap(gca,tools.magma)
     end
      
+    e_label = ['E' sprintf('%d',e_pair)];
+
+    
+    if opts.do_wave
+      f = gcf; 
+      figure(f.Number+1)
+      subplot(numel(opts.fascicle),1,f0), hold on
+      
+
+      plot(axons.time, median(wave,2),'LineWidth',1.2,'userData',e_label)  
+      if ee == nE, tools.tidyPlot, % xlim([-10 10]),
+        if f0 == numel(opts.fascicle)          
+          legend(get(get(gca,'Children'),'UserData'))
+          h = get(gcf,'Children'); h(1) = []; % legend
+          linkaxes(h,'x')
+        end      
+      end
+      figure(f)
+    end
+    
     if ~opts.do_vdc, continue, end
     subplot(nE,2,2*ee), hold on, axis equal
     
@@ -216,7 +280,7 @@ for ee = 1:nE
             nanmax(cat(1,sfap_vdc{:}))+1e-3];
   end, caxis(vals)  
   
-  ylabel(['\bfE' sprintf('%d',e_pair)]);
+  ylabel(['\bf' e_label])
   
   if ee == 1, title('V_{PP} (µV)'), end
 
@@ -304,7 +368,7 @@ for ty = 1:nC
 end
 
 h = get(gcf,'Children'); 
-linkaxes(h,'xy')
+linkaxes(h,'x')
 
 subplot(1,3,[1 2]), cla, hold on
 xy_f = dat.nerve.fascicles(:,:,ff); 
@@ -378,6 +442,8 @@ h(3).Color = hobj.Children(1).Color;
 h(3).UserData = hobj.UserData + 0.1; 
 
 caxis(h(1).Parent, quantile(this.vpp,[0.02 0.98]))
+
+title(h(1).Parent, hobj.Title.String)
 
 return
 

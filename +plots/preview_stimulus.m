@@ -1,7 +1,18 @@
 function preview_stimulus(s, varargin)
+% function preview_stimulus(stimuli, ...)
+% 
+% visualise a stimulus waveform
+% 
+% if 'stimuli' is a filename, from file load 'stimulus' and plot that
+% 
+% -delay      : use absolute timing (default: t = 0 at stimulus onset)
+% -roi [xlim] : set display region of interest
+% -cla        : if set, do not clear axes 
+% 
+% V0.2 CDE 18-Nov-2021
 
 named = @(v) strncmpi(v,varargin,length(v)); 
-% get_ = @(v) varargin{find(named(v))+1};
+get_ = @(v) varargin{find(named(v))+1};
 
 if nargin < 1, s = ''; end
 

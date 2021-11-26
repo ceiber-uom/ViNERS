@@ -3,6 +3,17 @@
 function preview_wave(filename,varargin)
 % Basic visualisation of waves output by models.nerve_recording and
 % models.ECAP_recording
+%  
+% -f [list] : if wave includes multiple fascicles, filter summation 
+%             (Default: sum across all)
+% -roi [tMin tMax] : set display ROI, default is ±40 ms.
+% -pair [list], -chan [list], -elec [list] : define electrode montages, 
+%              default is sequential bipolar pairs.
+% -zscale [0.5] : separation between wave baselines, scaled by wave Vpp
+% -trend : include linear trend in wave display, otherwise linear trend 
+%          is removed using tools.detrend_wave
+% 
+% V0.1 CDE 30 June 2021
 
 named = @(v) strncmpi(v,varargin,length(v)); 
 get_ = @(v) varargin{find(named(v))+1};
@@ -49,7 +60,7 @@ if numel(size(waves)) == 4
 end
 
 axon_type = options.class; 
-aff = [options.afferent]; 
+aff = [options.afferent] == 1; 
 axon_type(aff)  = cellfun(@(s) sprintf('aff. (%s)',s), axon_type(aff),'unif',0);
 axon_type(~aff) = cellfun(@(s) sprintf('eff. (%s)',s), axon_type(~aff),'unif',0);
 
@@ -57,10 +68,11 @@ axon_type(~aff) = cellfun(@(s) sprintf('eff. (%s)',s), axon_type(~aff),'unif',0)
 for type = 1:numel(axon_type)
 
   
-  wb = waves(:,:,type);
+  wb = sum(waves(:,:,type,:),4);
   wb = wb(roi,bipolar(:,1)) - wb(roi,bipolar(:,2));
 
   dy = 2 * diff(quantile(wb(wb>0), [0.01 0.99]));
+  if isnan(dy), dy = 1; end
 
   subplot(2,2,type), cla, hold on
   C = lines(max(7,size(wb,2)));

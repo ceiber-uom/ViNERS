@@ -18,6 +18,7 @@ function view_sensitivity(varargin)
 %   -geo:  Produce array geometry figure,
 %   -xy:   Generate a scatterplot comparison from the summary
 %           cross-section view. 
+%   -3d: plot 3D view of data (similar to plots.view_mesh)
 % 
 % If called with no filename, select an eidors sensitivity or stimulus
 %   file using a file chooser dialog.
@@ -172,7 +173,7 @@ function array_geometry_figure(EM)
 
   for ee = 1:nE
     elec_sensor{ee} = scatteredInterpolant(z_(f_id), y_(f_id), x_(f_id), ...
-                                   EM.(fascicleN).pot(ee,:)','linear','none'); 
+                                   EM.(fascicleN).pot(ee,:)','natural','none'); 
   end
   
 %% Generate sensitivity plot (centre of fascicle 1) 
@@ -362,9 +363,16 @@ if isempty(xy) && numel(a_list) > 0
     if max(abs(xy_fac(:))) > max(abs(sensor{1}.Points(:)))
       xy_fac = xy_fac / 1e3; % um to mm
     end
-    xy = [ax.pop.fibre_xy(ax.pop.fibre_fascicle == f_id,:);...
-          ax.pop.unmyelinated_xy(ax.pop.unmyelinated_fascicle == f_id,:)]/1e3;
-
+    
+    try
+        xy = cat(1,ax.pop.axon_xy);
+        xy = xy(cat(1,ax.pop.fascicle) == f_id,:);
+        xy = unique(xy,'rows'); 
+    catch
+        xy = [ax.pop.fibre_xy(ax.pop.fibre_fascicle == f_id,:);...
+              ax.pop.unmyelinated_xy(ax.pop.unmyelinated_fascicle == f_id,:)]/1e3;
+    end
+    
      [~,sel] = sort(rand(size(xy(:,1))));
      xy = xy(sel(1:min(400,end)),:);
      
@@ -430,7 +438,7 @@ edge_val  = zeros(nP,nE,2);
 
 h_elec = gobjects(0); 
 
-printInfo(); 
+tools.printInfo(); 
 
 for ee = 1:nE
     %%
@@ -440,7 +448,7 @@ for ee = 1:nE
     
     for ii = 1:size(xy,1)
 
-        printInfo('elec%d : %0.2f%% ... ', e_id(ee),100*ii/size(xy,1))
+        tools.printInfo('elec%d : %0.2f%% ... ', e_id(ee),100*ii/size(xy,1))
         xyz = [xy(ii,:) 0] + z' * [0 0 1];
         pot = sensor{e_id(ee)}(xyz);
         
@@ -498,7 +506,7 @@ for ee = 1:nE
           
 end
 
-printInfo(); fprintf('Done!\n')
+tools.printInfo(); fprintf('Done!\n')
 
 set(h_elec,'YLim',[min([h_elec.YLim]) max([h_elec.YLim])])
 
@@ -530,11 +538,11 @@ end
 
 for yy = 1:nY
 
-  h = subplot(nY,2,2*yy-1); cla reset
+  subplot(nY,2,2*yy-1); cla reset
   plot(outline(:,1),outline(:,2),'-','Color',[0 0 0 0.3])
-  axis equal, hold on
-
-  ylim([0 max(ylim)]), tools.tidyPlot
+  axis equal, hold on  
+  if max(ylim) > 0, ylim([0 max(ylim)]); end
+  tools.tidyPlot
   scatter(xy(:,1),xy(:,2),120,coeff(:,yy),'.')
   ch = colorbar; ylabel(ch,labels{yy}); 
 
@@ -837,7 +845,7 @@ function EM = convert_stim2fascicles(EM)
     for ff = 1:nF % ACTIVATING FUNCTION (if requested) 
       dx = 1e-3; 
       Ve = scatteredInterpolant(z_(ff), y_(ff), x_(ff), ...
-                                EM.(fasc_(ff)).pot(1,:)','linear','linear'); 
+                                EM.(fasc_(ff)).pot(1,:)','natural','none'); 
       for ee = 1:nE
 
         Ve.Values = EM.(fasc_(ff)).pot(ee,:)';

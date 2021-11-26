@@ -6,8 +6,8 @@ function sensitivity_section(varargin)
 % this also shows the mesh at the cut plane (at the transverse plane) for 
 %  additional context
 % 
-% fascicle_potential_section('-newest', ...) plots most recent file
-% fascicle_potential_section('-pdf', ...) makes a PDF from all the files in
+% sensitivity_section('-newest', ...) plots most recent file
+% sensitivity_section('-pdf', ...) makes a PDF from all the files in
 %                                         this subject (or -pdf-list, ...)
 % 
 % Optional arguments: -z [1.875 mm] - location of transverse section plane
@@ -299,10 +299,7 @@ get_ = @(v) varargin{find(named(v))+1};
 varargin(named('-pdf')) = []; 
 
 do_PDF  = ~any(named('-preview'));
-if do_PDF, ps_folder = 'make-pdf\'; 
- if exist([tempdir ps_folder],'dir'), rmdir([tempdir ps_folder],'s'); 
- end,                                 mkdir([tempdir ps_folder]);
-end
+plots.PDF_tools('setup',do_PDF); 
 
 %%
 f_ = @(x) [x.folder filesep x.name];
@@ -342,21 +339,15 @@ for ff = 1:numel(list)
 
   if do_PDF && (row == 1 || ff == numel(list))
     
-    close(2)
-    
-    nom = sprintf('%spage-%03d.ps',ps_folder,ff);
-    figs_to_ps(gcf,nom,'-move');
+    close(2)    
+    plots.PDF_tools('page',gcf,'page-%03d.ps',ff);    
     pause(0.1), close(gcf),  printInfo(); 
     
   else pause(0.1)
   end
 end
 
-if do_PDF
-  file = tools.file('get','Sensitivity_comparison (%d).pdf','next');
-  combine_PStoPDF([tempdir ps_folder], file )
-  clc
-end
+plots.PDF_tools('compile',do_PDF,'Sensitivity_comparison (%d).pdf')
 
 
 

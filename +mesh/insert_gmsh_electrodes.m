@@ -1,15 +1,22 @@
 
 function gmsh = insert_gmsh_electrodes(varargin)
+% gmsh = insert_gmsh_electrodes(varargin)
+% Reads an input file (such as example.json) and outputs the GMSH template 
+% code necessary to create the electrode geometry. Currently only handles 
+% planar rectangular, circular, and cylyndrical electrodes.
+% 
+% Called by *.geo.template via tools.make_from_template.
+%
+% Updated V0.3 CDE 18 Nov 2021
 
-% named = @(v) strncmpi(v,varargin,length(v)); 
 
 if nargin == 0, G = get_layout([]); 
 elseif nargin >= 1 && isstruct(varargin{1})
      G = get_layout(varargin{1},varargin{2:end});
 elseif nargin >= 1 && ischar(varargin{1})
-    G = get_layout(load_layout(varargin{1}), varargin{2:end});
+     G = get_layout(load_layout(varargin{1}), varargin{2:end});
 else G = get_layout([],varargin{:});
-end, G = compress_fieldnames(G); % removes lowercase letters
+end
 
 nE = size(G.EP,1);
 
@@ -27,16 +34,37 @@ xyz = @(e) [ G.EP(e,:)-G.ED(G.ETI(e),:)./[2 1 2]-[0 G.ID(G.ETI(e)) 0] ...
                    
 for ee = 1:nE % Loop 1: electrode cut-out
     
-    if ~isempty(G.ER) && G.ER(G.ETI(ee)) > 0
+    if strncmpi(G.EK{G.ETI(ee)}, 'circum',6)
+        
+      r = G.ID(G.ETI(ee))+G.ED(G.ETI(ee),2);
+      if isfield(G,'cuff_ID'), r = r+G.cuff_ID; 
+      elseif isfield(G,'carrier') && isfield(G.carrier,'cuff_IDr')
+           r = r + G.carrier.cuff_IDr;      
+      end
+      if size(G.ED,2) == 2, a = 2*pi; 
+      else a = G.ED(G.ETI(ee),3)/(r-G.ED(G.ETI(ee),2));
+      end, a = min(a,2*pi); 
+          
+      xra = [G.EP(ee,1)-G.ED(G.ETI(ee),1)/2   G.ED(G.ETI(ee),1) r a];
+      gmsh = w_(gmsh,'Cylinder(el) = {%0.3f,0,0,%0.3f,0,0,%0.3f,%0.9f};',xra);      
+      gmsh = w_(gmsh,'Rotate{ {1,0,0}, {0,0,0}, %0.9f } { Volume{el}; }', pi/2-a/2);
+
+    elseif ~isempty(G.ER) && G.ER(G.ETI(ee)) > 0 || ...
+            strncmpi(G.EK{G.ETI(ee)}, 'ci',2)
       z = G.ID(G.ETI(ee))+G.ED(G.ETI(ee),2); 
       xyz_r = [G.EP(ee,:) - [0 z 0] [0 z 0] G.ER(G.ETI(ee))];
       gmsh = w_(gmsh,'Cylinder(el) = {%0.3f,%0.3f,%0.3f,%0.3f,%0.3f,%0.3f,%0.3f,2*Pi};',xyz_r);
     else
       gmsh = w_(gmsh,'Box(el) = {%0.3f,%0.3f,%0.3f,%0.3f,%0.3f,%0.3f};', xyz(ee));
     end
+    
+    if ~isempty(G.EA) % ElectrodeAngle        
+      gmsh = w_(gmsh,'Rotate{ {1,0,0}, {0,0,0}, %0.9f } { Volume{el}; }', deg2rad(G.EA(ee)));
+    end
     gmsh = w_(gmsh,'BooleanDifference{ Volume{%d}; Delete; }{ Volume{el}; Delete; }', ...
                     G.gmsh_CI);
 end
+
 
 gmsh = w_(gmsh,'\n');
 
@@ -46,38 +74,50 @@ xyz = @(e) [ G.EP(e,:)-G.ED(G.ETI(e),:)./[2 1 2]-[0 G.ID(G.ETI(e)) 0] ...
                    
 for ee = 1:nE % Loop 2: electrode objects
     
-    if ~isempty(G.ER) && G.ER(G.ETI(ee)) > 0
+    if strncmpi(G.EK{G.ETI(ee)}, 'circum',6)
+        
+      r = G.ID(G.ETI(ee))+G.ED(G.ETI(ee),2);
+      if isfield(G,'cuff_ID'), r = r+G.cuff_ID; 
+      elseif isfield(G,'carrier') && isfield(G.carrier,'cuff_IDr')
+           r = r + G.carrier.cuff_IDr;      
+      end
+      if size(G.ED,2) == 2, a = 2*pi; 
+      else a = G.ED(G.ETI(ee),3)/(r-G.ED(G.ETI(ee),2));
+      end, a = min(a,2*pi); 
+          
+      x = [G.EP(ee,1)-G.ED(G.ETI(ee),1)/2   G.ED(G.ETI(ee),1)];
+      gmsh = w_(gmsh,'Cylinder(el+%d) = {%0.3f,0,0,%0.3f,0,0,%0.3f,%0.9f};',ee-1,x,r,a);      
+      gmsh = w_(gmsh,'Rotate{ {1,0,0}, {0,0,0}, %0.9f } { Volume{el+%d}; }', pi/2-a/2, ee-1);
+      
+      r = r - G.ED(G.ETI(ee),2);
+      gmsh = w_(gmsh,'Cylinder(el+%d) = {%0.3f,0,0,%0.3f,0,0,%0.3f,%0.9f};',ee,x,r,a);      
+      gmsh = w_(gmsh,'Rotate{ {1,0,0}, {0,0,0}, %0.9f } { Volume{el+%d}; }', pi/2-a/2, ee);
+      gmsh = w_(gmsh,'BooleanDifference{ Volume{el+%d}; Delete; }{ Volume{el+%d}; Delete; }', ...
+                    ee-[1 0]);
+                
+    elseif ~isempty(G.ER) && G.ER(G.ETI(ee)) > 0 || ...
+            strncmpi(G.EK{G.ETI(ee)}, 'ci',2)
       z = G.ID(G.ETI(ee))+G.ED(G.ETI(ee),2); 
       xyz_r = [G.EP(ee,:) - [0 z 0] [0 z-G.ID(G.ETI(ee)) 0] G.ER(G.ETI(ee))];
       gmsh = w_(gmsh,'Cylinder(el+%d) = {%0.3f,%0.3f,%0.3f,%0.3f,%0.3f,%0.3f,%0.3f,2*Pi};',ee-1,xyz_r);
-      continue
+    else    
+      gmsh = w_(gmsh,'Box(el+%d) = {%0.3f,%0.3f,%0.3f,%0.3f,%0.3f,%0.3f};', ee-1, xyz(ee));
     end
     
-    gmsh = w_(gmsh,'Box(el+%d) = {%0.3f,%0.3f,%0.3f,%0.3f,%0.3f,%0.3f};', ee-1, xyz(ee));
+    if ~isempty(G.EA) % ElectrodeAngle
+      gmsh = w_(gmsh,'Rotate{ {1,0,0}, {0,0,0}, %0.9f } { Volume{el+%d}; }', deg2rad(G.EA(ee)), ee-1);
+    end
 end
 
 % if G.ER, G.ESR, or G.IR were non-zero we'd have to handle calling
 % "Fillet{}{}{}" here as well as finding the relevent indices
 % asset(isempty(G.ER),'TODO: implement electrode radius')
-assert(isempty(G.ESR),'TODO: implement electrode surface radius')
+% assert(isempty(G.ESR),'TODO: implement electrode surface radius')
 % assert(isempty(G.IR),'TODO: implement electrode inset radius')
 
-% if ~any(named('-interstitial')), return, end
 
-gmsh = w_(gmsh,'\nvol_id = newv;'); % Add prostate and intersitial
-gmsh = w_(gmsh,'Box(vol_id) = {%0.4f,%0.4f,%0.4f,%0.4f,%0.4f,%0.4f}; // Interstitial', ...
-                -G.DS(1),-G.DS(3),-G.DS(2),2*G.DS(1),G.DS(3)+G.DS(4),2*G.DS(2));
-gmsh = w_(gmsh,'Box(vol_id+1) = {%0.4f,%0.4f,%0.4f,%0.4f,%0.4f,%0.4f}; // Prostate\n', ...
-                -G.DS(1),G.DS(4),-G.DS(2),2*G.DS(1),G.DS(3)-G.DS(4),2*G.DS(2));
-gmsh = w_(gmsh,'BooleanDifference{ Volume{vol_id}; Delete; }{ Volume{%d}; }', G.gmsh_CI);
+gmsh = insert_domain_medium(gmsh,G,nE);
 
-for ee = 1:nE % Loop 3: BooleanDifference
-    gmsh = w_(gmsh,'BooleanDifference{ Volume{vol_id}; Delete; }{ Volume{el+%d}; }', ee-1);
-end
-
-gmsh = w_(gmsh,'\nPhysical Volume("PDMS") = {%d};', G.gmsh_CI);
-gmsh = w_(gmsh,'Physical Volume("Interstitial") = {vol_id};');
-gmsh = w_(gmsh,'Physical Volume("Prostate") = {vol_id+1};');
 
 for ee = 1:nE % Loop 3: BooleanDifference
     gmsh = w_(gmsh,'Physical Volume("Elec%d") = {el+%d};', ee, ee-1);
@@ -86,6 +126,65 @@ end
 return
 
 
+
+function gmsh = insert_domain_medium(gmsh, G, nE)
+
+w_ = @(g,f,varargin) sprintf(['%s\n' f],g,varargin{:}); 
+
+layers = []; 
+
+if any(G.DS < 0)
+  nb = G.DS(G.DS < 0); 
+  G.DS(G.DS < 0) = []; 
+ switch sum(G.DS < 0)
+  case 1, OB = [-G.DS(1) G.DS(1) -G.DS(2) G.DS(2)    nb    G.DS(3)];
+  case 2, OB = [   nb(1) G.DS(1)    nb(2) G.DS(2) -G.DS(3) G.DS(3)];
+  case 3, OB = [   nb(1) G.DS(1)    nb(2) G.DS(2)    nb(3) G.DS(3)];
+  otherwise
+     error('unable to handle %d negative bounds on G.DomainSize', sum(G.DS < 0))
+ end 
+else      OB = [-G.DS(1) G.DS(1) -G.DS(2) G.DS(2) -G.DS(3) G.DS(3)];
+end
+layers = G.DS(4:end);
+
+if isfield(G,'DN') && ismember(numel(G.DN), numel(layers)+[0 1 2])
+  layer_names = G.DN;
+elseif isfield(G,'D') && ismember(numel(G.D), numel(layers)+[0 1 2])
+  layer_names = G.D;
+end
+
+if numel(layer_names) < numel(layers)+1
+  for ii = (numel(layer_names)+1):(numel(layers)+1)
+    layer_names{ii} = sprintf('Tissue_%02d',ii); 
+  end
+end
+
+layers = [layers OB(6)];
+
+% if ~any(named('-interstitial')), return, end
+gmsh = w_(gmsh,'\nvol_id = newv;'); % Add domain
+for ii = 1:numel(layers)
+
+  if ii == 1, z = [OB(5) layers(ii)-OB(5)];
+  else z = [layers(ii-1) layers(ii)-layers(ii-1)];
+  end
+    
+  gmsh = w_(gmsh,'Box(vol_id+%d) = {%0.4f,%0.4f,%0.4f,%0.4f,%0.4f,%0.4f}; // %s', ...
+                             ii-1,  OB(1), z(1),OB(3), ...
+                                    OB(2)-OB(1),z(2),OB(4)-OB(3), ...
+                                                  layer_names{ii});
+end
+
+gmsh = w_(gmsh,'BooleanDifference{ Volume{vol_id}; Delete; }{ Volume{%d}; }', G.gmsh_CI);
+
+for ee = 1:nE % Loop 3: BooleanDifference
+    gmsh = w_(gmsh,'BooleanDifference{ Volume{vol_id}; Delete; }{ Volume{el+%d}; }', ee-1);
+end
+
+gmsh = w_(gmsh,'\nPhysical Volume("PDMS") = {%d};', G.gmsh_CI);
+for ii = 1:numel(layers)
+    gmsh = w_(gmsh,'Physical Volume("%s") = {vol_id+%d};',layer_names{ii},ii-1);
+end
 
 
 % parse varargin for geometry properties
@@ -111,12 +210,15 @@ end
 default.ElectrodePositions = [1.85 0 0; 1.1 0 0; -1.1 0 0; -1.85 0 0];
 default.ElectrodeDimensions = [0.2 0.1 1.8]; % L W H
 default.ElectrodeRadius = []; 
-default.ElectrodeSurfaceRadius = [];
+% default.ElectrodeSurfaceRadius = [];
+default.ElectrodeAngle = []; 
+default.ElectrodeKind = {'Rectangular'};
 default.ElectrodeTypeIndex = 1; 
 default.InsetDepth = 0.1;
 default.InsetRadius = 0;
 
-default.DomainSize = [6 6 6 0.31]; % mm
+default.DomainSize = [6 6 6]; % mm
+default.DomainName = {'Interstitial'};
 
 default.gmsh_CarrierIndex = 1; 
 
@@ -138,6 +240,20 @@ for f = fieldnames(default)' % For each field
   f_sh = strrep(f{1},'Electrode',''); % "Type" refers to "ElectrodeType", etc.
   if any(named(f_sh)), geom.(f{1}) = get_(f_sh); end    
 end
+
+%% Run through verification checks
+geom = compress_fieldnames(geom); % removes lowercase letters
+
+if ~iscell(geom.EK), geom.EK = {geom.EK}; end    
+nE = size(geom.EP,1);
+nT = max(geom.ETI); 
+
+if numel(geom.ETI) < nE, geom.ETI = repmat(geom.ETI(:),nE,1); end
+if numel(geom.EK) < nT,  geom.EK = repmat(geom.EK,nT,1); end
+if numel(geom.ID) < nT,  geom.ID = repmat(geom.ID,nT,1); end
+
+return
+
 
 function geom = load_layout(filename)
 
@@ -175,6 +291,7 @@ F_long = fieldnames(S);
 F_short = regexprep(F_long,'[a-z]','');
 for ii = 1:length(F_long)    
   if any(strcmp(F_short{ii},F_short(1:ii-1))), continue, end
+  if isempty(F_short{ii}), continue, end
   if F_short{ii}(1) == '_', F_short{ii} = ...
       [regexp(F_long{ii},'^[^_]+_','match','once') F_short{ii}(2:end)];
   end

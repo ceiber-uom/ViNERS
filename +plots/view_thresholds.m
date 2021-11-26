@@ -1,6 +1,20 @@
 
 
-function view_thresholds(varargin) % Adapted from EMBC fig. 4
+function view_thresholds(varargin)
+% function view_thresholds([filename], ...)
+% Display thresholds, Adapted from EMBC fig. 4
+% 
+% Options: 
+%  filename = '?' : use UI file picker (default if nargin = 0)
+% -ax [axon_file] : use specified axon file (default: newest)
+% -v, -verbose    : quiet mode
+% -fig [f]        : plot to specified figure number (default: fig 1)
+% -units-um       : disable auto detection of nerve length units
+% -pop-col [rgb]  : plot with specified colors, height must match pop
+% -quantile [n]   : define max quantile cut-off for plot (Default: 0.99)
+% 
+% V0.2 CDE 18 Nov 2021
+
 
 named = @(v) strncmpi(v,varargin,length(v));
 get_ = @(v) varargin{find(named(v))+1};
@@ -58,7 +72,9 @@ end
 
 %% Set up fascicles to the left
 
-figure(1), clf, G = @(v) [v v v]/10; 
+fig_num = 1;
+if any(named('-fig')), fig_num = get_('-fig'); end
+figure(fig_num), clf, G = @(v) [v v v]/10; 
 outline_style = {'EdgeColor',G(2),'LineWidth',1.1};
 
 nF = size(nerve.fascicles,3); 
@@ -94,9 +110,12 @@ I_stim = cell(4,1);
 
 list = dir([stim_folder '/*.mat']);
 
-
 axon_colors = []; 
 axon_names = {}; 
+axon_myelin = []; 
+
+if any(named('-pop-col')), axon_colors = get_('-pop-col'); end
+
 
 for ff = 1:numel(list)
   
@@ -124,20 +143,22 @@ for ff = 1:numel(list)
   
   if numel(pop.population_id) == numel(pop.fascicle)
     for ty = unique(pop.population_id)'      
+      if ty > numel(I_stim), I_stim{ty} = []; end
       I_stim{ty} = [I_stim{ty}; stim.threshold(pop.population_id(pop.fascicle == f_id) == ty)];
     end, ty = unique(pop.population_id);
   else ty = pop.population_id;
       I_stim{ty(1)} = [I_stim{ty(1)}; stim.threshold];
   end
     
-  axon_colors(ty,:) = pop.color;
+  axon_myelin(ty) = pop.myelinated;
+  if ~any(named('-pop-col')), axon_colors(ty,:) = pop.color; end
   if iscell(pop.axon_model), axon_names(ty) = pop.axon_model;
   else                       axon_names(ty) = {pop.axon_model};
   end
 end
 
 most_of = 0.01;
-if any(named('-q')), most_of = get_('-q'); end
+if any(named('-q')), most_of = 1 - get_('-q'); end
 
 
 fudge = cat(1,I_stim{:});
@@ -169,24 +190,28 @@ mk_mnln = @(n) plot([1 1]*nanmedian(I_stim{n}),[0 50], 'Color', ...
                              [axon_colors(n,:) 0.4],'LineWidth',1.2);
 
 subplot(3,3,7), cla reset, hold on, 
-mk_sumplot(1); mk_sumplot(2); mk_mnln(1); mk_mnln(2);
+arrayfun(mk_sumplot, find(axon_myelin)); 
+arrayfun(mk_mnln, find(axon_myelin));
 tools.tidyPlot, % xlim([0 200])
 xlabel('threshold (µA)')
 
 subplot(3,3,[8 9]),cla reset,  hold on, 
-mk_sumplot(1); mk_sumplot(2); mk_mnln(1); mk_mnln(2);
-mk_sumplot(3); mk_sumplot(4); mk_mnln(3); mk_mnln(4);
+
+arrayfun(mk_sumplot, find(axon_myelin)); 
+arrayfun(mk_mnln, find(axon_myelin));
+
+arrayfun(mk_sumplot, find(~axon_myelin)); 
+arrayfun(mk_mnln, find(~axon_myelin));
+
 tools.tidyPlot,%  xlim([200 1600])
 xlabel('threshold (µA)')
 
 %%
 
 report_ = @(n) fprintf('%s: %0.1f, %0.1f = 50/95%%\n', ... 
-              axon_names{n(1)},quantile(cat(1,I_stim{n}),[.5 .95])); 
-
-report_(1)
-report_(2)
-report_([3 4])
+              axon_names{find(n,1)},quantile(cat(1,I_stim{n}),[.5 .95])); 
+[~,~,idx] = unique(axon_names); 
+arrayfun(@(n) report_(idx == n), 1:max(idx))
 
 % max(I_stim{2})
 % mean(cat(1,I_stim{[3 4]}) < max(cat(1,I_stim{[1 2]})))

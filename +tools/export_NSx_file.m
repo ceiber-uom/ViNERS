@@ -1,4 +1,43 @@
 function export_NSx_file(varargin)
+% function export_NSx_file(  filename   , ... )
+% function export_NSx_file( {filenames} , ... )
+% This file reads one or more epoch files and combines them into a NS5 file
+% as defined by https://github.com/BlackrockNeurotech/NPMK 
+% 
+% Options: 
+% -config [opts] : options structure for wave composition. The default 
+%                  is to copy the input mat files to the output NSx files
+%                  with no substantial changes in composition. 
+% -in {files}    : set input file list (redundant with positional arg)
+% -all           : get all epoch files from specified path
+%                  (default: specify individual file names)
+% -template [file] : read specified NEV file as a template for export,
+%                    defauts to R12_016/Baseline005.ns5 on my system
+% 
+% Data processing options:
+% -noise 10 (µV) : define Gaussian noise amplitude
+% -roi 25 (ms)   : define time window to exclude edge effects 
+%                   (symmetric around 0 or 2-elementvector)
+% -elec [...]    : define recording electrode pairs 
+%                   (synonymous with -chan, -pair)
+% -fasc [1:nF]   : reduce recording to the specified fascicle IDs.
+% -axon [1:nP]   : select axon populations to include in output.
+% -shift [0 ms]  : set temporal shift on signal
+% -gain [1]      : set multiplicative gain
+% 
+% model.waves is a nTime x nChannels x nFascicles x nTypes 
+%             OR a nTime x nChannels x nTypes matrix in units of uV
+%
+% s.output.seg(nV).fileIndex = [1 x nW] index into s.input
+% s.output.seg(nV).fascicles = 'all' or {1 x nW} list ? 
+% s.output.seg(nV).axonClass = [1 x nW] 
+% s.output.seg(nV).input.shift = scalar [0] or [1 x nW] in // ms //
+% s.output.seg(nV).input.gain  = scalar [1] or [1 x nW]
+% s.output.seg(nV).input.noise = scalar [10] or [1 x nW] in // uV //
+% s.output.seg(nV).input.roi   = scalar [-25] or [1 x nW] in // ms //
+% s.file.fileName = 'whatever.ns5'
+
+
 
 named = @(v) strncmpi(v,varargin,length(v)); 
 get_ = @(v) varargin{find(named(v))+1};
@@ -168,6 +207,8 @@ end
 %% Default output configuration
 function s = set_output_configuration(varargin)
 
+varargin = tools.opts_to_args(varargin,'NSx','NS5','NPMK');
+
 named = @(v) strncmpi(v,varargin,length(v)); 
 get_ = @(v) varargin{find(named(v))+1};
 f_ = @(f) [f.folder filesep f.name];
@@ -196,7 +237,7 @@ if ~isfield(s,'input') % Parse inputFile from arg{1} or select
   if isempty(s.input), 
     s.input = {tools.file('sub~/waves/*.mat','-prompt')};
     
-    if any(named('-all')) || any(named('-get'))
+    if any(named('-all'))
       [fp,~] = fileparts(s.input{1}); 
       s.input = arrayfun(f_,dir([fp '/*.mat']),'unif',0); 
     end
@@ -219,11 +260,12 @@ d.gain  = 1;
 d.axonClass = 1:4; 
 d.fascicle = 'all'; 
 
-if any(named('-ax')),    d.axonClass = get_('-ax'); end
-if any(named('-noise')), d.noise = get_('-noise');  end
-if any(named('-roi')),   d.time = get_('-roi');     end
-if any(named('-shift')), d.shift = get_('-shift');  end
-if any(named('-gain')),  d.gain = get_('-gain');    end
+if any(named('-ax')),    d.axonClass = get_('-ax');  end
+if any(named('-noise')), d.noise = get_('-noise');   end
+if any(named('-roi')),   d.time = get_('-roi');      end
+if any(named('-shift')), d.shift = get_('-shift');   end
+if any(named('-gain')),  d.gain = get_('-gain');     end
+if any(named('-fasc')),  d.fascicle = get_('-fasc'); end
  
 size_check_ = @(u) all(size(u) == 1) || ...
                    all(size(u) == size(d.axonClass)); 
@@ -276,8 +318,8 @@ get_ = @(v) varargin{find(named(v))+1};
 persistent SRC
 if isempty(SRC)
 
-  if any(named('-nev-')), f_example = get_('-nev-');
-  elseif any(named('-refer')), f_example = get_('-refer');
+  if any(named('-nev')), f_example = get_('-nev');
+  elseif any(named('-temp')), f_example = get_('-temp');
   else f_example = [expdir('Rat12_016') 'Baseline005.ns5']; 
   end, SRC = openNSx(f_example); 
 
@@ -355,7 +397,7 @@ NS5.MetaTags.DataPoints = size(NS5.Data,2);
 NS5.MetaTags.DataDurationSec = size(NS5.Data,2) / 3e4;
 NS5.MetaTags.DataPointsSec = size(NS5.Data,2) / 3e4;
 
-comment = 'simulated_data from pelvic-nerve-model eiber et al 2020';
+comment = 'simulated_data from ViNERS, J neural eng, Eiber et al. (2021) ';
 comment(end+1 : length(NS5.MetaTags.Comment)) = 0; 
 NS5.MetaTags.Comment = comment;
 

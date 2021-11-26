@@ -1,42 +1,62 @@
 
-function compare_sensitivity(varargin)
-
-% TODO - documentation needs to go here
+function list = compare_sensitivity(varargin)
+% function [files] = compare_sensitivity([files], ...)
+% 
+% Compare sensitivity functions in fascicle centre across different meshes.
+% If only one file is specified, the comparison is instead across fascicle
+%   centres within a mesh. 
+% 
+% Options
+% -fascicle [id] : use specified fascicle, default F#1
+% -AF            : compute activating function and show that (for stimulus)
+% -bipolar       : compute bipolar sensitivity montage
+% -chan [elec]   : show listed electrodes only (Default: all electrodes)
+% -elec [elec]   : synonym for -chan
+% -no-mesh       : do not show meshes on left hand side of figure (faster)
+% -multiplot     : also plot each individual file
+%                  (ala plots.view_sensitivity)
+% 
+% V0.2 CDE 
 
 named = @(v) strncmpi(v,varargin,length(v)); 
 get_ = @(v) varargin{find(named(v))+1};
 
 % files or gather from input
-if nargin > 0, files = varargin{1}; else files = {}; end
-if isempty(files)
-  [files,folder] = uigetfile('sensitivity*.mat',[], ...
+if nargin > 0, list = varargin{1}; else list = {}; end
+if isempty(list)
+  [list,folder] = uigetfile('sensitivity*.mat',[], ...
                               tools.file('sub~\eidors\'), ... 
                              'Multiselect','on');
   if all(folder == 0), return, end % cancelled
-  files = strcat(folder,files);
+  list = strcat(folder,list);
   
 end
-if ~iscell(files), files = {files}; end
-files(contains(files,'~')) = cellfun(@tools.file, files(contains(files,'~')), 'Unif',0);
+if isstruct(list) && isfield(list,'name') && isfield(list,'folder'), ...
+    p_ = @(x,varargin) [x.folder filesep x.name varargin{:}];
+    list = arrayfun(p_,list,'unif',0);
+end
+if ~iscell(list), list = {list}; end
+list(contains(list,'~')) = cellfun(@tools.file, list(contains(list,'~')), 'Unif',0);
 
 tools.setupEIDORS;
 
-nMaps = numel(files);
+nMaps = numel(list);
 
 %% Assuming all files have same electrodes ... 
 
 C = 1-summer(max(7,nMaps)); 
+if any(named('-colormap')), C = get_('-colormap'); end
 
-figure(1), clf, lbl = cell(size(files));
+figure(1), clf, lbl = cell(size(list));
 
 fac_id = 1;
 if any(named('-f')), fac_id = get_('-f'); end
-do_fascicle_comparison = (numel(files) == 1); 
+do_fascicle_comparison = (numel(list) == 1); 
   
 if do_fascicle_comparison
   
-  fprintf('Loading %s\n',tools.file('T',files{1}))
-  EM = load(files{1});
+  fprintf('Loading %s\n',tools.file('T',list{1}))
+  EM = load(list{1});
   nMaps = sum(strncmpi(EM.model.object_name,'Fascicle',6)); 
   C = lines(min(7,nMaps));
 end
@@ -46,8 +66,8 @@ for ff = 1:nMaps
   if ff == 1 || ~do_fascicle_comparison
 
     if ~do_fascicle_comparison
-      fprintf('Loading %s\n',strrep(files{ff},tools.file,'~'))  
-      EM = load(files{ff});
+      fprintf('Loading %s\n',strrep(list{ff},tools.file,'~'))  
+      EM = load(list{ff});
     end
     
     lbl{ff} = sprintf('(%dx%dx%d mm)',round(range(EM.model(1).nodes(:,[3 1 2]))));
@@ -89,7 +109,7 @@ for ff = 1:nMaps
   if any(named('-elec')), electrode_list = get_('-elec'); end
   
   if any(electrode_list > nE) 
-    warning('ViNERS:nElectrodes','%s only has %d electrodes',files{ff},nE)
+    warning('ViNERS:nElectrodes','%s only has %d electrodes',list{ff},nE)
     electrode_list(electrode_list > nE) = []; 
   end
   
@@ -100,7 +120,7 @@ for ff = 1:nMaps
       continue
     end
     elec_sensor{ee} = scatteredInterpolant(z_((fac_id)), y_((fac_id)), x_((fac_id)), ...
-                                           EM.(FascicleX).pot(ee,:)','linear','none'); 
+                                           EM.(FascicleX).pot(ee,:)','natural','none'); 
     
   end
 
@@ -110,7 +130,7 @@ for ff = 1:nMaps
   if isfield(EM.info,'FascicleTrajectory')
     
       alist = dir(tools.file('sub~\axons\*.mat'));    
-      load(tools.INPUT_file(alist,files{ff}),'nerve');
+      load(tools.INPUT_file(alist,list{ff}),'nerve');
       
       xy = mean(nerve.fascicles); 
       xyz = tools.from_trajectory(EM,nerve,xy);
@@ -163,16 +183,16 @@ arrayfun(@(n) grid(n,'on'),h)
 if ~any(named('-nomesh')) && ~any(named('-no-m')) 
   %%
   if isempty(get(gcf,'Children'))  
-       subplot_ = @(f) subplot(ceil(numel(files)/2),2,f);    
+       subplot_ = @(f) subplot(ceil(numel(list)/2),2,f);    
        % subplot_ = @(f) subplot(numel(files),1,f);    
-  else subplot_ = @(f) subplot(numel(files),3,3*f-2);  
+  else subplot_ = @(f) subplot(numel(list),3,3*f-2);  
     for ee = 1:length(h)
       h(ee).Position([1 3]) = [0.35 0.6]; 
     end
   end
 
-  for ff = 1:numel(files)
-    EM = load(files{ff});  
+  for ff = 1:numel(list)
+    EM = load(list{ff});  
     subplot_(ff)
     
     if numel(EM.model) == 1, show_fem(EM.model)
@@ -181,7 +201,7 @@ if ~any(named('-nomesh')) && ~any(named('-no-m'))
     u = get(gca,'Children');
     u(end).EdgeAlpha = 0.1;
     set(gca,'Position',get(gca,'Position') - [5 -1 0 5]/100)  
-    title(regexp(files{ff},'\([^\)]+\)','match','once'),'Color',C(ff,:))  
+    title(regexp(list{ff},'\([^\)]+\)','match','once'),'Color',C(ff,:))  
   end
 
   if numel(get(gcf,'Children')) == nMaps
@@ -205,14 +225,17 @@ if ~any(named('-nomesh')) && ~any(named('-no-m'))
 end
 
 %%
-if ~any(named('-multip')), return, end
+if ~any(named('-multip'))
+  if nargout == 0, clear, end
+  return
+end
 %% Plot each file (duplicate of fig.1,  plots.view_sensitivity)
 
 figure(2), clf
 
-for ff = 1:numel(files)
+for ff = 1:numel(list)
 
-  EM = load(files{ff});
+  EM = load(list{ff});
 
   for f = fieldnames(EM.utils)' % Create utility local functions
     EM.utils.(f{1}) = strrep(EM.utils.(f{1}),'out','EM');     
@@ -235,7 +258,7 @@ for ff = 1:numel(files)
   for ee = 1:nE
       elec_sensor{ee} = scatteredInterpolant(z_((fac_id)), ...
                            y_((fac_id)), x_((fac_id)), ...
-                               EM.(FascicleX).pot(ee,:)','linear','none'); 
+                               EM.(FascicleX).pot(ee,:)','natural','none'); 
   end
 
   % Standard color-tools for figures
@@ -245,7 +268,7 @@ for ff = 1:numel(files)
 
   if do_multiMesh, m = fac_id; else m = 1; end
   
-  subplot(numel(files),1,ff), hold on
+  subplot(numel(list),1,ff), hold on
 
   sel = strcmp(EM.model(m).object_name,'PDMS'); 
   sel = EM.model(m).object_id{sel}; 
@@ -271,7 +294,7 @@ for ff = 1:numel(files)
   if isfield(EM.info,'FascicleTrajectory')
     
       alist = dir(tools.file('sub~\axons\*.mat'));    
-      load(tools.INPUT_file(alist,files{ff}),'nerve');
+      load(tools.INPUT_file(alist,list{ff}),'nerve');
       
       xy = mean(nerve.fascicles); 
       xyz = tools.from_trajectory(EM,nerve,xy);
@@ -308,13 +331,15 @@ for ff = 1:numel(files)
   set(gca,'DataAspectRatio',y_gscale./min(y_gscale))
 
   axis tight, tools.tidyPlot
-  title(regexp(files{ff},'\([^\)]+\)','match'))
+  title(regexp(list{ff},'\([^\)]+\)','match'))
   pause(0.05)
 end
 
 h = flipud(get(gcf,'Children'));
 set(h,'XLim',[-1.02 1]*max(abs([h.XLim])))
 arrayfun(@(n) grid(n,'on'),h)
+
+if nargout == 0, clear, end
 
 
 
@@ -367,7 +392,7 @@ function EM = convert_stim2fascicles(EM)
     for ff = 1:nF % ACTIVATING FUNCTION (if requested) 
       dx = 1e-3; 
       Ve = scatteredInterpolant(z_(ff), y_(ff), x_(ff), ...
-                                EM.(fasc_(ff)).pot(1,:)','linear','linear'); 
+                                EM.(fasc_(ff)).pot(1,:)','natural','none'); 
       for ee = 1:nE
 
         Ve.Values = EM.(fasc_(ff)).pot(ee,:)';

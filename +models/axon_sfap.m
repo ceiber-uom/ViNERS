@@ -13,7 +13,7 @@ function axons = axon_sfap(varargin)
 % 
 % The output SFAP wave is in units of:
 % SFAP (uV) =  I (nA) / [ 4 pi sigma (ohm/m) distance (mm)]
-% The mm and the nA cancel to yield µV, so no further conversion is needed.
+% The mm and the nA cancel to yield ï¿½V, so no further conversion is needed.
 % 
 % Core Syntax: 
 %  -file 'sensitivity*.mat' : specify spatial sensitivity function
@@ -62,9 +62,7 @@ get_ = @(v) varargin{find(named(v))+1};
 if any(named('-q')), printf = @(varargin) []; else printf = @fprintf; end
 
 printf('Running models.%s ... \n', mfilename);
-if isempty(strfind(ctfroot, 'MATLAB')) %#ok<*STREMP>
-    save_default_options ('-mat-binary'), 
-end
+if tools.isOctave, save_default_options ('-mat-binary'), end
 
 [EM,AX] = tools.parse_arguments(varargin, 'LOAD', ...
                               'eidors','eidors~/sens*.mat', 'axons');
@@ -72,7 +70,7 @@ end
 output_file = EM.filename; 
 if any(named('-out')), output_file = get_('-out'); end
 if isa(output_file,'function_handle'), output_file = output_file(); end
-if ~any(ismember(output_file,'/\')), % if not already a path ... 
+if ~any(ismember(output_file,'/\')) % if not already a path ... 
   output_file = tools.file(['sfap~/' output_file '.mat'],'-make');
 end
 
@@ -88,9 +86,10 @@ opts = struct;
 opts.axons_folder = AX.folder; 
 opts.verbose = ~any(named('-q'));
 opts.use_parallel = ~any(named('-no-p'));
+opts.use_PCA = ~any(named('-direct'));
 
 pop = AX.pop; 
-nerve = AX.nerve; 
+nerve = AX.nerve; %#ok<NASGU>
 
 %% Get sensitivity functions 
 
@@ -120,23 +119,23 @@ end
 
 % Translate sensitivity peaks if specified
 if any(named('-recenter-peak'))
-  if verbose, disp('Translating sensitivity peaks...'), end
+  printf('Translating sensitivity peaks...\n')
   sensitivity = translate_I2V_peaks(sensitivity, get_('-recenter-peak'));
 end
 
 % If -grid-XY replace axon positions with XY grid
-if any(named('-xy')),
+if any(named('-xy'))
   %%
-  if verbose, disp('using XY grid'), end
+  printf('using XY grid\n')
   pop = make_axon_xy_grid(EM,pop,AX.nerve); 
-  nF = max(pop.unmyelinated_fascicle);
+  nF = max(cat(1,pop.fascicle));
 end
 
 clear ee ff x_ y_ z_ fac_ f sel ok
 
 %% Get Distortion if specified
 
-if any(named('-dis')),
+if any(named('-dis'))
   opts.distortion = get_('-dis'); 
   if size(opts.distortion,1) == numel(pop)
     opts.distorion_by_type = opts.distortion; 
@@ -156,6 +155,8 @@ if ischar(z_ref), z_ref = str2double(regexp(z_ref,'\d+','match','once'));
     z_ref = median(EM.model.nodes(EM.model.electrode(z_ref).nodes,1)); 
 end
 
+if any(named('-sphase')), opts.spatial_phase = get_('-sphase'); end
+
 fs = 30; % 24.414; % kHz 
 if any(named('-sample-rate')), fs = get_('-sample-rate'); 
 elseif any(named('-fs')),      fs = get_('-fs'); 
@@ -166,6 +167,14 @@ if any(named('-time')),  time_span = get_('-time'); end
 
 %% Compute sensitivity at each fibre xy and take PCA
 
+if any(named('-types'))
+    sel = ismember({pop.axon_model},get_('-types'));
+    if ~any(sel) 
+      error('no valid types (%s) selected', sprintf('%s,',pop.axon_model))
+    end
+    pop = pop(sel);
+end
+
 sam = struct; 
 
 for myelin = 0:1 % for each axon class 
@@ -174,10 +183,12 @@ for myelin = 0:1 % for each axon class
   % different ultrastructural relationships. 
   
   sel = find([pop.myelinated] == myelin); 
-  [subtype,group_id,axon_xy] = get_axon_xy(EM, pop(sel));
-  
+ [subtype,group_id,axon_xy] = get_axon_xy(EM, pop(sel));
+    
   if isempty(group_id), continue, end  
-  printf('Computing sensitivity PCA (myelin=%d) ... \n',myelin);
+  if opts.use_PCA
+    printf('Computing sensitivity PCA (myelin=%d) ... \n',myelin);
+  end
     
   nG = max(group_id); 
   nF = max(cat(1,pop(sel).fascicle));
@@ -217,18 +228,17 @@ for myelin = 0:1 % for each axon class
     return
   end
   
-  i2v_pca = cell(size(axon_xy)); 
+  i2v_pca = cell(size(axon_xy));  
     
-  for ii = 1:(nG*nF) % The parfor moved to inside get_i2v_pca  
-    
-    [gg,ff] = ind2sub([nG nF],ii);
-    i2v_pca{ii} = get_i2v_pca(sensitivity(:,ff),axon_xy{ii}, ... 
-                          subtype(gg),pop(sel(1)).axon_model,opts);  %%#ok<PFBNS>
-    assert(isempty(i2v_pca{ii}.weight) || any(i2v_pca{ii}.profile(:)), ...
-           'Computed 0 or NaN PCA profile')
+  if ~opts.use_PCA, i2v_pca = []; 
+  else
+    for ii = 1:(nG*nF) % The parfor moved to inside get_i2v_pca
+      [gg,ff] = ind2sub([nG nF],ii);
+      i2v_pca{ii} = get_i2v_pca(sensitivity(:,ff),axon_xy{ii}, ... 
+                                subtype(gg),pop(1).axon_model,opts); %%#ok<PFBNS>
+    end  
+    i2v_pca = reshape([i2v_pca{:}],nG,nF);  
   end
-  
-  i2v_pca = reshape([i2v_pca{:}],nG,nF);  
   the = @(v,x) arrayfun(@(g) median(v(g==x)), (1:nG)');
 
   pop_id = arrayfun(@(x) x*ones(size(pop(x).size_sample)), sel,'unif',0);
@@ -271,18 +281,43 @@ for ty = 1:numel(pop)
   opts.efferent = ~pop(ty).afferent;
   
   [subtype,index,axon_xy] = get_axon_xy(EM, pop(ty));
-  axon_xy(all(cellfun(@isempty,axon_xy),2),:) = []; 
+  axon_xy(all(cellfun(@isempty,axon_xy),2),:) = [];  
   
-  if pop(ty).myelinated      
-      subtype = find(ismember(sam.A_groups,subtype));      
-      opts.sensitivity_pca = sam.A_PCA_sensitivity(subtype,:); 
+  if pop(ty).myelinated
+    sample = find(ismember(sam.A_groups,subtype));     
+    if ~opts.use_PCA, opts.sensitivity_pca = cell(size(axon_xy));
+    else opts.sensitivity_pca = sam.A_PCA_sensitivity(sample,:); 
+    end
   else
-      subtype = find(ismember(sam.C_groups,subtype));      
-      opts.sensitivity_pca = sam.C_PCA_sensitivity(subtype,:);
+    sample = find(ismember(sam.C_groups,subtype)); 
+    if ~opts.use_PCA, opts.sensitivity_pca = cell(size(axon_xy));
+    else opts.sensitivity_pca = sam.C_PCA_sensitivity(sample,:);
+    end
   end
-  
   nG = numel(subtype);
   V = cell(nG,nF);
+  
+  if ~opts.use_PCA % Compute for this subtype
+    printf('Interpolating sensitivity fields for %s...\n', pop(ty).axon_model)
+    i2v = cell(size(axon_xy));     
+    if opts.use_parallel && (nG*nF) > 1   
+      parfor ii = 1:(nG*nF) % The parfor moved to inside get_i2v_pca
+        [gg,ff] = ind2sub([nG nF],ii);
+        i2v{ii} = get_i2v_pca(sensitivity(:,ff),axon_xy{ii}, ... 
+                               subtype(gg),pop(ty).axon_model,opts); %#ok<PFBNS>
+      end 
+      opts.sensitivity_pca = i2v;
+    else
+      for ii = 1:(nG*nF) % The parfor moved to inside get_i2v_pca
+        [gg,ff] = ind2sub([nG nF],ii);
+        i2v{ii} = get_i2v_pca(sensitivity(:,ff),axon_xy{ii}, ... 
+                              subtype(gg),pop(ty).axon_model,opts);
+      end 
+    end
+    opts.sensitivity_pca = reshape([i2v{:}],nG,nF);  
+    clear i2v
+    printf('Computing SFAP for %s...\n', pop(ty).axon_model)
+  end
   
   cache_path = tools.cache('path');
 
@@ -296,7 +331,7 @@ for ty = 1:numel(pop)
                                         axon_xy{g,f},opts), ...
                            [nG nF],ii);
     end
-  elseif isempty(strfind(ctfroot, 'MATLAB')) %#ok<*STREMP> % octave parallel
+  elseif tools.isOctave % octave parallel
     if isempty(which('pararrayfun')), pkg load parallel; end 
     V = pararrayfun(nproc-1, @(a) parfun_unpack(cache_path, @(g,f) ...
                                    pca_to_wave(subtype(g),time, ...
@@ -326,12 +361,13 @@ for ty = 1:numel(pop)
   this.axon.xy = pop(ty).axon_xy; 
   this.axon.fascicle = pop(ty).fascicle;
   this.axon.subtype = index;
-  this.axon.subtype_index = subtype;
+  this.axon.subtype_index = sample;
   this.sensitivity = opts.sensitivity_pca; 
   
-  for ii = 1:nG*nF
+  for ii = 1:nG*nF  
       [gg,ff] = ind2sub([nG nF],ii); 
       if isempty(this.sensitivity(ii).weight), continue, end      
+      if ~opts.use_PCA, break, end
       if pop(ty).myelinated
            sel = sam.A_populations == ty; 
            sel = sel(sam.A_index == subtype(gg) & sam.A_fascicle == ff);
@@ -344,9 +380,9 @@ for ty = 1:numel(pop)
   end
         
   if pop(ty).myelinated
-       this.axon.diameter = sam.A_diam(subtype);
-       this.axon.g_ratio  = sam.A_g_ratio(subtype);
-  else this.axon.diameter = sam.C_diam(subtype);
+       this.axon.diameter = sam.A_diam(sample);
+       this.axon.g_ratio  = sam.A_g_ratio(sample);
+  else this.axon.diameter = sam.C_diam(sample);
   end
   
   if numel(V) == 1, this.component_SFAP = V{1};
@@ -371,7 +407,7 @@ for ty = 1:numel(pop)
       warn_once = false; 
   end
   
-  if numel(V) == 1, 
+  if numel(V) == 1
     nK = numel(this.sensitivity.latent);
     this.axon_SFAP = reshape(V{1},[],nK) * this.sensitivity.weight' ;
     this.axon_SFAP = reshape(this.axon_SFAP, ...
@@ -396,20 +432,20 @@ for ty = 1:numel(pop)
   if isempty(axons), axons = this;
   else axons(ty) = this; %#ok<AGROW>
   end
+  
+  % save each time, so there's something in the event of a crash
+  eidors_file = EM.filename;
+  nerve = AX.nerve;
 
+  printf('Saving %s\n ', tools.file('TT',output_file))
+  save(output_file,'axons','eidors_file','nerve','pop','sam');
+  
 end
 
 %% Save output to sub-xx/sfap/(eidors_filename).mat
 
 clear axon_xy xy grp fid index opts nG z_ref V ty ff 
 clear mdl myelin ii is_hash
-
-eidors_file = EM.filename;
-nerve = AX.nerve;
-
-printf('Saving %s\n ', tools.file('TT',output_file))
-save(output_file,'axons','eidors_file','nerve','pop','sam');
-
 if nargout == 0, clear, end
 return
 
@@ -417,7 +453,7 @@ return
 function sensitivity = translate_I2V_peaks(sensitivity, z_REF)
 %%
 
-if numel(z_REF) < nE, 
+if numel(z_REF) < nE 
   z_REF = repmat(z_REF(:), [ceil(nE/numel(z_REF)) 1]); 
 end
 
@@ -472,34 +508,45 @@ if ~use_F_anatomy
   z_ = @(n) EM.model.nodes((n),3); 
 end
 
-% source = pop;
+src = pop;
 
 for ty = 1:numel(pop)
-            
-  pop(ty).fibre_diam = median(pop(ty).fibre_diam);
+  
+  my = [pop.myelinated] == pop(ty).myelinated;
+  typical = @(v) median(cat(1,src(my).(v))); 
+  
+  pop(ty).fibre_diam = typical('fibre_diam');
   if pop(ty).myelinated
-
+    
+    pop(ty).g_ratio = typical('g_ratio');    
     if any(named('-ad')), pop(ty).fibre_diam = get_('-ad'); end
     if any(named('-ag')), pop(ty).g_ratio = get_('-ag'); end
-    if any(named('-gr')), pop(ty).g_ratio = get_('-gr'); end
-      
-    pop(ty).g_ratio = median(pop(ty).g_ratio);
+    if any(named('-gr')), pop(ty).g_ratio = get_('-gr'); end    
     pop(ty).axon_diam = pop(ty).fibre_diam .* pop(ty).g_ratio;
     
-    if ~any(named('-q')), 
+    [~,example] = min((cat(1,src(my).fibre_diam) - pop(ty).fibre_diam).^2 + ...
+                      (cat(1,src(my).g_ratio)    - pop(ty).g_ratio).^2);
+    merged_ss = cat(1,src(1:3).size_sample);
+    pop(ty).size_sample = merged_ss(example);
+    
+    if ~any(named('-q'))
       fprintf('[%02d | %s] %s, d=%0.4f, g=%0.4f\n', ty, ...
             pop(ty).axon_model,'Simulating grid of axons', ...
             pop(ty).fibre_diam, pop(ty).g_ratio); 
     end        
-  elseif ~any(named('-q')), 
-      if any(named('-cd')), pop(ty).fibre_diam = get_('-cd'); end
+  elseif ~any(named('-q'))
+    if any(named('-cd')), pop(ty).fibre_diam = get_('-cd'); end
+    [~,example] = min((src(ty).fibre_diam - pop(ty).fibre_diam).^2);
+    pop(ty).size_sample = src(ty).size_sample(example);       
+    if ~any(named('-q'))    
       fprintf('[%02d | %s] %s, d=%0.4f\n', ty, ...
             pop(ty).axon_model,'Simulating grid of axons', ...
             pop(ty).fibre_diam); 
+    end
   end
-  pop(ty).size_sample = 0; 
-  
+      
   if ty > 1      
+    pop(ty).size_sample = pop(ty).size_sample * ones(size(pop(1).fascicle));
     pop(ty).axon_xy = pop(1).axon_xy; 
     pop(ty).fascicle = pop(1).fascicle; 
     continue
@@ -549,6 +596,7 @@ for ty = 1:numel(pop)
     pop(ty).axon_xy = [pop(ty).axon_xy; gx(ok) gy(ok)];
     pop(ty).fascicle = [pop(ty).fascicle; 0*gx(ok) + ff];
   end
+  pop(ty).size_sample = pop(ty).size_sample * ones(size(pop(ty).fascicle));
 end
   
 n_axons = size(pop(1).fascicle); 
@@ -572,10 +620,18 @@ end
 d = load(d,'index','length'); 
 xy_list = xy; 
 
-%% WAVE = ï¿½V = (nA) / (4*pi*sigma) (ohm.m) / distance (mm) 
-% the mm and the nA cancel to yield ï¿½V, no conversion necessary
+%% WAVE = uV = (nA) / (4*pi*sigma) (ohm.m) / distance (mm) 
+% the mm and the nA cancel to yield uV, no conversion necessary
 
 [Z,~] = sort(d.length);
+
+if isfield(opts,'spatial_phase')
+    
+    dZ = d.length(2)-d.length(1);
+    Z = Z + opts.spatial_phase * dZ;
+    
+end
+
 nZ = numel(Z);
 nE = numel(sensor); 
 nA = size(xy_list,1);
@@ -592,11 +648,11 @@ if ndims(xy_list) == 3 % 3D axon trajectories, this whole approach might fall ov
   i2v = sensor{ee}(Zq(:,1),Zq(:,2),Zq(:,3));
 
 else
-  if ~opts.use_parallel % any(named('-no-p'))
+  if ~opts.use_parallel || size(xy_list,1) < 3 % any(named('-no-p'))
     for ii = 1:size(xy_list,1)                    
       i2v(:,:,ii) = get_i2v(sensor,xy_list(ii,:),Z); 
     end   
-  elseif isempty(strfind(ctfroot, 'MATLAB')) %#ok<*STREMP> % octave parallel
+  elseif tools.isOctave % octave parallel
     if isempty(which('pararrayfun')), pkg load parallel; end      
     i2v = pararrayfun(nproc-1, @(a) get_i2v(sensor,xy_list(a,:),Z), ...
                                     1:size(xy_list,1),'UniformOutput',0);
@@ -612,14 +668,31 @@ end
 %%
 if isempty(i2v) % nothing to simulate? 
   
+ p.profile = zeros(nZ,nE,1); 
  p.weight = zeros(0,1);
  p.latent = 100;
- p.profile = zeros(nZ,nE,1);
  return
 
+elseif ~opts.use_PCA
+    
+ p.profile = i2v; % zeros(nZ,nE,1); 
+ p.weight = eye(nA);
+ p.latent = 100*ones(nA,1);
+ return
+    
 elseif all(i2v(:) == 0)
-  error(['The axon population did not intersect the fascicle geometry, ' ... 
-         'please check your units and try again or call using -xy-eidors'])
+
+  p.profile = zeros(nZ,nE,1);
+  p.weight = zeros(nA,1);
+  p.latent = 100;
+  
+  ff = evalin('caller','ff'); 
+  warning('ViNERS:possibleUnitsFail', ... 
+          'an axon population (gid=%d) did not %s %d, %s %s', gg, ... 
+          'intersect the fascicle geometry for fascicle', ff, ...
+          'please check -debug-units. If doing an XY grid, you may need', ...
+          'to try also using -xy-eidors (or -unit-um)')
+  return
 end
 
 i2v = permute( i2v, [3 1 2] ); % axonID, elec, z       
@@ -667,7 +740,7 @@ function i2v = get_i2v(sensor,xy_list,Z)
 
     ok = ~isnan(pot); % Patch over discontinuities
     if mean(ok) < 0.5, i2v(:,ee) = 0; continue, end
-    if ~all(ok),
+    if ~all(ok)
       pot(~ok) = interp1(Z(ok),pot(ok),Z(~ok),'linear','extrap');
     end
 
@@ -679,7 +752,7 @@ function i2v = get_i2v(sensor,xy_list,Z)
 
 
 %% Get a cell array of axon XY for the contents of the population
-function [sample_ids,gid,xy] = get_axon_xy(EM,pop)
+function [sample_ids,gid,xy,pop_ids] = get_axon_xy(EM,pop)
 
 [sample_ids,~,gid] = unique(cat(1,pop.size_sample)); 
 % 
@@ -689,6 +762,9 @@ function [sample_ids,gid,xy] = get_axon_xy(EM,pop)
 %   % each element is instead a [nCells x 3 x nPoints] trajectory for
 %   % each cell. 
 %   
+
+pop_ids = arrayfun(@(t) t*ones(size(pop(t).fascicle)), 1:numel(pop),'unif',0);
+pop_ids = cat(1,pop_ids{:});
 
 nF = max(cat(1,pop.fascicle)); 
 nG = numel(sample_ids);
@@ -773,7 +849,7 @@ d = load(d);
 
 if isfield(options,'distortion')
   distortion_factor = options.distortion; 
-  if isstruct(distortion_factor),     
+  if isstruct(distortion_factor)   
       distortion_factor = [options.distortion.v ...
                            options.distortion.z ...
                            options.distortion.t];
@@ -794,6 +870,8 @@ time = reshape(time,[],1);
 % d.dt_dx is the delta-ms per length sample 
 
 [Z,~] = sort(d.length);
+
+% save(tools.file('get','debug (%d).mat','next'))
 
 assert(numel(Z) == size(sensors(1).profile,1),... 
       'mismatch between PCA I2V (nZ=%d) and n%03d_out.mat (nZ=%d)', ... 
@@ -820,7 +898,7 @@ for kk = 1:nK % for each PCA component ...
   else t = spike_time + (d.time-d.time(t0))/distortion_factor(3);
     current = @(n) interp1(t,c,time-(n*v/distortion_factor(1)),'Linear',0);  
   end
-  if ~isempty(options.evoked_potential), 
+  if ~isempty(options.evoked_potential) 
     poststimulus = 1./(1+exp((spike_time-time+options.evoked_potential) ...
                                 / options.raster_opts.tau1 * 3));
     current = @(n) current(n) .* poststimulus;

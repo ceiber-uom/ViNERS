@@ -1,3 +1,4 @@
+
 function settings = nerve_recording(varargin)
 % TODO add header documentation : raw docstring below
 %
@@ -43,8 +44,7 @@ get_ = @(v) varargin{find(named(v))+1};
 
 if any(named('-q')), printf = @(varargin) []; else printf = @fprintf; end
 
-if isempty(strfind(ctfroot, 'MATLAB')) %#ok<*STREMP>
-    save_default_options ('-mat-binary'), end
+if tools.isOctave, save_default_options('-mat-binary'), end
 
 settings = get_settings(varargin{:}); 
 
@@ -85,7 +85,7 @@ for ff = 1:nF % for each fascicle and electrode, make i2v function
    if ee == 1, sensitivity{ee,ff} = scatteredInterpolant( ... 
                        z_(fac_(ff)), y_(fac_(ff)), x_(fac_(ff)), ...
                        EM.(fascicle).pot(ee,:)', ...
-                       'linear','none'); % units of mm ? 
+                       'natural','none'); % units of mm ? 
    else sensitivity{ee,ff} = sensitivity{1,ff}; 
         sensitivity{ee,ff}.Values = EM.(fascicle).pot(ee,:)';
    end
@@ -148,6 +148,28 @@ end
 if any(named('-rep')), settings.n_reps = get_('-rep'); end
 n_rep = settings.n_reps;
 
+if any(named('-raster')),
+  input_raster = get_('-raster');
+  if ~isa(input_raster,'function_handle')
+  
+    if ischar(input_raster), 
+      printf('Loading %s ... \n', input_raster);
+      input_raster = load_spikes_file(input_raster, fs); 
+    end
+
+    population_frequency = 1; 
+    population_spikerate = 1:numel(input_raster); 
+    population_exponent = 1; 
+    n_rep = 1; 
+    
+    settings.name = 'input'; 
+    settings.wave_path = 'file';
+    settings.file_scheme = 'epoch_%03d (%%d).mat';
+    settings.file_vector = @(ex,sr,fr,ch) sr(1);
+    
+  end
+end
+
 warn_once = true; 
 check_folder = true; 
 
@@ -166,9 +188,7 @@ for i_rep = 1:n_rep
     waves = []; 
     raster = {}; 
     options = []; 
-    
-    % load raster input here ????? 
-    
+        
     for ty = 1:numel(pop)
         
       time = 0:(1/fs):(time_span);
@@ -199,9 +219,19 @@ for i_rep = 1:n_rep
         opts.raster_opts.tau1 = 0.5 ;
         opts.raster_opts.tau2 = 2.5 ; % ms time constants
         opts.evoked_potential = true; % prevent currents at time < 0
+      elseif strcmpi(settings.name,'gauss')
+        if i_freq > 1, time = []; break, end
+        opts.raster_opts.ty = 'gauss'; % gaussian spike-time profile
+        opts.raster_opts.ex = population_exponent(1);
+        opts.raster_opts.fc = population_frequency(i_rate);
       end
       
-      if size(population_spikerate,2) >= 2 
+      if strcmpi(settings.name,'input')
+        opts.raster_opts = input_raster.epoch_info;
+        if isfield(opts.raster_opts, 'z_ref')
+          opts.reference_z = opts.raster_opts.z_ref; 
+        end
+      elseif size(population_spikerate,2) >= 2 
         opts.raster_opts.fb = population_spikerate(i_rate,1); % imp/s base 
         opts.raster_opts.fp = population_spikerate(i_rate,2); % imp/s peak  
       elseif strncmpi(settings.wave_path,'flat',4)
@@ -214,9 +244,9 @@ for i_rep = 1:n_rep
       
       opts.raster_opts.ax_sd = cohere_settings(i_coh); 
       
-      xy = pop.axon_xy;
-      grp = pop.size_sample;
-      fid = pop.fascicle;
+      xy = pop(ty).axon_xy;
+      grp = pop(ty).size_sample;
+      fid = pop(ty).fascicle;
       
       if any(named('-fasc')) % -fascicle-list
         ok = ismember(fid,get_('-fasc'));
@@ -241,13 +271,32 @@ for i_rep = 1:n_rep
         opts.raster_opts.modulation = settings.modulation_fun;
       end
 
-      if any(named('-raster')), 
-          get_raster_ = get_('-raster');
-          opts.raster_opts.loop_indices = [i_coh i_freq i_rate i_rep ty]; 
-          if ischar(raster), opts.raster = load_spikes_file(get_raster_, time, pop, opts); 
-          elseif iscell(raster), opts.raster = load_spikes_file(get_raster_, time, pop, opts); 
-          else opts.raster = get_raster_(time,xy,opts.raster_opts); 
-          end
+      if strcmpi(settings.name,'input')
+        if iscell(input_raster), opts.raster = input_raster{i_rate};
+        else opts.raster = input_raster(i_rate);
+        end
+        
+        pidx = [0 cumsum(cellfun(@numel,{pop(1:ty).fascicle}))]; 
+        if isfield(opts.raster,'population_id') % identifying field
+          sel = opts.raster.population_id == ty;
+        elseif any(mod(opts.raster.spk_axon,1)) % id.pop# syntax
+          sel = mod(opts.raster.spk_axon,1)*10 == ty;
+        else          
+          sel = opts.raster.spk_axon <= pidx(end) & ...
+                opts.raster.spk_axon > pidx(end-1);
+        end
+        
+        opts.raster.spk_axon = opts.raster.spk_axon(sel) - pidx(end-1);
+        opts.raster.spk_time = opts.raster.spk_time(sel);
+        
+        if isempty(opts.raster.bin_rate), 
+          opts.raster.bin_rate = opts.raster.pop_rate; 
+        end
+        
+      elseif any(named('-raster')), 
+        get_raster_ = get_('-raster');
+        opts.raster_opts.loop_indices = [i_coh i_freq i_rate i_rep ty]; 
+        opts.raster = get_raster_(time,xy,opts.raster_opts); 
       else opts.raster = models.random_raster(time,xy,opts.raster_opts);          
       end
       
@@ -289,7 +338,7 @@ for i_rep = 1:n_rep
       if any(named('-debug-u')) || any(named('-preview'))
         %% Debug this, is a consistent problem ... 
 
-        clf, plots.view_mesh(EM.model,'-fasc')
+        clf, plots.view_mesh(EM.model,'-fasc'), hold on
         h = get(gca,'Children');
         h(2).EdgeAlpha = 0.25;  h(2).FaceAlpha = 0; 
         h(2).Clipping = 'off';
@@ -298,16 +347,16 @@ for i_rep = 1:n_rep
           for uu = 1:size(axon_xy{gg},1)
             xyz = permute(axon_xy{gg}(uu,:,:), [3 2 1]);
             if size(axon_xy{gg},2) == 2
-              plot3(0*xyz(1,:), xyz(2,:),xyz(1,:),'o', ...
-                  'Color',[1 0 0 0.2],'Clipping','off','markersize',5) 
+              plot3(0*axon_xy{gg}(:,1), axon_xy{gg}(:,2), ...
+                      axon_xy{gg}(:,1),'.','Color',[1 0 0 0.2], ... 
+                      'Clipping','off','markersize',5) 
+              break
             else
               plot3(xyz(:,1), xyz(:,2),xyz(:,3), ...
                   'Color',[1 0 0 0.2],'Clipping','off') 
             end
-            hold on
           end
         end
-        
         
         lim = [min(cat(1,axon_xy{:})) max(cat(1,axon_xy{:}))];
         if size(lim,3) > 1, lim = [min(lim(:,[3 2 1],:),[],3) ...
@@ -324,9 +373,7 @@ for i_rep = 1:n_rep
         return
       end
       
-      
       %% CORE parfor: Compute summation of currents from spike raster
-      
       printf('Computing spatial summation of %d APs ... ',numel(opts.raster.spk_time))
       cache_path = tools.cache('path');
 
@@ -338,7 +385,7 @@ for i_rep = 1:n_rep
                                              axon_xy{g,f},opts), ...
                                           [nG nF],ii);
         end
-      elseif isempty(strfind(ctfroot, 'MATLAB')) %#ok<*STREMP> % octave parallel
+      elseif tools.isOctave % octave parallel
         if isempty(which('pararrayfun')), pkg load parallel; end 
         V = pararrayfun(nproc-1, @(a) parfun_unpack(cache_path, @(g,f) ...
                                          models.spike_to_wave(g+f/gff,time, ...
@@ -363,9 +410,11 @@ for i_rep = 1:n_rep
       end
       raster{ty} = opts.raster;  %#ok<AGROW>
       
-      if isempty(options), options = opts; else options(ty) = opts; end
+      if isempty(options), options = opts; else options(ty) = opts; end %#ok<AGROW>
     end % ty [1..4]
 
+    if isempty(time), continue, end % flag for skipped run
+    
     % This check prevents from having to open another instance
     summary = [sqrt(nanmean(waves(:).^2)) nanmin(waves(:)) nanmax(waves(:))];
     printf(' computed wave: RMS %0.1f, range %01f-%0.1f\n', summary ); 
@@ -462,14 +511,13 @@ for i_rep = 1:n_rep
     file_out = tools.file('get',[wave_path strrep(file_out,'.0_','_')],'next'); 
 
     if ~exist(fileparts(file_out),'dir'), mkdir(fileparts(file_out)),
-    elseif check_folder      
-      
-      
+      check_folder = false;
+    elseif check_folder
       if any(named('-clf'))
-          warning('ViNERS:overwriteFolder','erasing the pre-existing directory %s', tools.file('T',wave_path))
-          rmdir(fileparts(file_out),'s'), mkdir(fileparts(file_out))
+        warning('ViNERS:overwriteFolder','erasing the pre-existing directory %s', tools.file('T',wave_path))
+        rmdir(fileparts(file_out),'s'), mkdir(fileparts(file_out))
       else
-          warning('ViNERS:possibleOverWrite','possibly writing in a pre-existing directory %s', tools.file('T',wave_path))
+        warning('ViNERS:possibleOverWrite','possibly writing in a pre-existing directory %s', tools.file('T',wave_path))
       end
       check_folder = false; 
     end
@@ -484,7 +532,7 @@ for i_rep = 1:n_rep
     inputs = varargin;    
     raster = [raster{:}]; 
     
-    printf('Saving %s\n', tools.file('TT',file_out))
+    printf('Saving %s\n', tools.file('T',file_out))
     save(file_out, 'raster','waves','time','inputs','options')
 
    end % i_rate
@@ -504,70 +552,85 @@ get_ = @(v) varargin{find(named(v))+1};
 
 opts = struct; 
 
-if any(named('-settings')), opts = get_('-settings'); return, end
+if any(named('-settings')), opts = get_('-settings');
+else
 
-opts(1).name = 'default';
-opts(1).n_reps = 3;
-opts(1).coherence = [0.2 0.5 1 2 5];
-opts(1).spikerate = [0.1; 1; 10];
-opts(1).frequency = 1;
-opts(1).exponent = 3; 
-opts(1).wave_path = 'flat';
-opts(1).file_scheme = 'epoch_k%0.1f_c%0.1f (%%d).mat';
-opts(1).file_vector = @(ex,sr,fr,ch) [sr(1) ch]; 
+  opts(1).name = 'default';
+  opts(1).n_reps = 3;
+  opts(1).coherence = [0.2 0.5 1 2 5];
+  opts(1).spikerate = [0.1; 1; 10];
+  opts(1).frequency = 1;
+  opts(1).exponent = 3; 
+  opts(1).wave_path = 'flat';
+  opts(1).file_scheme = 'epoch_k%0.1f_c%0.1f (%%d).mat';
+  opts(1).file_vector = @(ex,sr,fr,ch) [sr(1) ch]; 
 
-opts(2) = opts(1); 
-opts(2).name = 'base';
-opts(2).n_reps = 10; 
-opts(2).spikerate = 0.1; 
-opts(2).coherence = [0.3 1 3]; 
-opts(2).wave_path = 'base';
-opts(2).file_scheme = 'epoch_b%0.1f_c%0.1f (%%d).mat';
+  opts(2) = opts(1); 
+  opts(2).name = 'base';
+  opts(2).n_reps = 10; 
+  opts(2).spikerate = 0.1; 
+  opts(2).coherence = [0.3 1 3]; 
+  opts(2).wave_path = 'base';
+  opts(2).file_scheme = 'epoch_b%0.1f_c%0.1f (%%d).mat';
 
-opts(3) = opts(1); 
-opts(3).name = 'drift'; 
-opts(3).frequency = [1 1 1];
-opts(3).spikerate = [0.1 1; 1 5; 1 10; 1 20; 3 4];
-opts(3).exponent  = [1 5 20];  
-opts(2).coherence = [0.3 1 3]; 
-opts(3).wave_path = 'drift'; 
-opts(3).file_scheme = 'epoch_b%0.1f_k%0.1f_c%0.1f_w%0.0f (%%d).mat';
-opts(3).file_vector = @(ex,sr,fr,ch) [sr(1:2) ch ex]; 
+  opts(3) = opts(1); 
+  opts(3).name = 'drift'; 
+  opts(3).frequency = [1 1 1];
+  opts(3).spikerate = [0.1 1; 1 5; 1 10; 1 20; 3 4];
+  opts(3).exponent  = [1 5 20];  
+  opts(3).coherence = [0.3 1 3]; 
+  opts(3).wave_path = 'drift'; 
+  opts(3).file_scheme = 'epoch_b%0.1f_k%0.1f_c%0.1f_w%0.0f (%%d).mat';
+  opts(3).file_vector = @(ex,sr,fr,ch) [sr(1:2) ch ex]; 
 
-opts(4) = opts(1); 
-opts(4).name = 'pulse';
-opts(4).coherence = [0.3 1 3]; 
-opts(4).spikerate = [1 1.6 2.5 4 6.3 10 16 25 40 63 100]'; 
-opts(4).wave_path = 'pulse'; 
-opts(4).file_scheme = 'epoch_k%0.1f_c%0.1f (%%d).mat';
+  opts(4) = opts(1); 
+  opts(4).name = 'pulse';
+  opts(4).coherence = [0.3 1 3]; 
+  opts(4).spikerate = [1 1.6 2.5 4 6.3 10 16 25 40 63 100]'; 
+  opts(4).wave_path = 'pulse'; 
+  opts(4).file_scheme = 'epoch_k%0.1f_c%0.1f (%%d).mat';
 
-opts(5) = opts(1); 
-opts(5).name = 'burst';
-opts(5).frequency = [100 50 20 10];
-opts(5).spikerate =  [.1 3; 0.75 1.5; 1 1; 1 30; 7.5 15; 10 10 ]; 
-opts(5).wave_path = 'burst'; 
-opts(5).file_scheme = 'epoch_k%0.1f_f%0.1f_c%0.1f (%%d).mat';
-opts(5).file_vector = @(ex,sr,fr,ch) [sr(2) fr ch]; 
+  opts(5) = opts(1); 
+  opts(5).name = 'burst';
+  opts(5).frequency = [100 50 20 10];
+  opts(5).spikerate =  [.1 3; 0.75 1.5; 1 1; 1 30; 7.5 15; 10 10 ]; 
+  opts(5).wave_path = 'burst'; 
+  opts(5).file_scheme = 'epoch_k%0.1f_f%0.1f_c%0.1f (%%d).mat';
+  opts(5).file_vector = @(ex,sr,fr,ch) [sr(2) fr ch]; 
 
+  opts(6) = opts(1); 
+  opts(6).name = 'phase';
+  opts(6).frequency = [9.1 30];
+  % opts(6).spikerate =  [3.75 7.5 0] + linspace(0,360,7)' * [0 0 1];
+  opts(6).spikerate =  [1.8 12 0] + linspace(0,360,7)' * [0 0 1];
+  opts(6).spikerate = [opts(6).spikerate(1:6,:); 5 5 0; 0.2 0.2 0];
+  opts(6).wave_path = 'phase'; 
+  opts(6).file_scheme = 'epoch_k%0.1f_f%0.1f_p%0.0f_c%0.1f (%%d).mat';
+  opts(6).file_vector = @(ex,sr,fr,ch) [sr(2) fr sr(3) ch]; 
 
-opts(6) = opts(1); 
-opts(6).name = 'phase';
-opts(6).frequency = [9.1 30];
-% opts(6).spikerate =  [3.75 7.5 0] + linspace(0,360,7)' * [0 0 1];
-opts(6).spikerate =  [1.8 12 0] + linspace(0,360,7)' * [0 0 1];
-opts(6).spikerate = [opts(6).spikerate(1:6,:); 5 5 0; 0.2 0.2 0];
-opts(6).wave_path = 'phase'; 
-opts(6).file_scheme = 'epoch_k%0.1f_f%0.1f_p%0.0f_c%0.1f (%%d).mat';
-opts(6).file_vector = @(ex,sr,fr,ch) [sr(2) fr sr(3) ch]; 
+  opts(7) = opts(1); 
+  opts(7).name = 'flat';
+  opts(7).coherence = [0.3 1 3]; 
+  opts(7).spikerate = [0.1 0.2 0.5 1 2 5 10 20]';
 
-opts(7) = opts(1); 
-opts(7).name = 'flat';
-opts(7).coherence = [0.3 1 3]; 
-opts(7).spikerate = [0.1 0.2 0.5 1 2 5 10 20]';
+  for x = 1:numel(opts)+1
+    if x > numel(opts), return, end
+    if any(named(opts(x).name)), opts = opts(x); break, end  
+    if any(named(['-' opts(x).name])), opts = opts(x); break, end  
+  end
+  
+end
 
-for x = 1:numel(opts)  
-  if any(named(opts(x).name)), opts = opts(x); return, end  
-  if any(named(['-' opts(x).name])), opts = opts(x); return, end  
+for fi = fieldnames(opts)' % check setting-field names 
+  if any(named(fi{1})), 
+    if ~any(named('-q')), fprintf('update settings.(%s)\n', fi{1}); end 
+    opts.(fi{1}) = get_(fi{1}); 
+  end
+end
+
+if any(named('spikerate')) % check size of input spikerate
+  nD = size(opts.spikerate); % columns = 
+  if nD(1) == 1, opts.spikerate = opts.spikerate'; end
 end
 
 return
@@ -608,22 +671,203 @@ function wave = parfun_unpack(cache_path,fun,nGnF,ii)
   [gg,ff] = ind2sub(nGnF,ii);
   wave = fun(gg,ff); 
 
-function dat = load_spikes_file(filename,time,pop,opts)
+function raster = load_spikes_file(filename, fs)
 
-% named = evalin('caller','named');
-% get_ = evalin('caller','get_');
+has_ext_ = @(b) strncmpi(fliplr(filename),fliplr(b),length(b)); 
+if has_ext_('.mat'), raster = load(filename);
+elseif has_ext_('.xml'), raster = convert_xml_raster(filename, fs); 
+elseif has_ext_('.json'), raster = tools.parse_json(filename);
+elseif has_ext_('.nwb'), raster = tools.read_NWB_file(filename);
+else error('Unknown file format "%s", expected {.mat,.json,.xml}');
+end
+  
+raster = validate_raster(raster, fs);
 
-% persistent rasterData
+return
 
-% if 0, error, end
+function raster = validate_raster(d, fs)
 
-% load_spikes_file(get_raster_, time, pop, opts);
+if numel(d) > 1, 
+  if iscell(d), raster = cellfun(@validate_raster,d);
+  else raster = arrayfun(@validate_raster,d);
+  end, return
+end
 
-%     spk_time: [27.2333  list]
-%     spk_axon: [37 list]
-%     spk_rate: [1 x 131 double]
-%     bin_time: [1 x 131 double]
-%     bin_rate: [1 x 131 double]
-%     pop_rate: [1 x 3901 double]
+spk_unit = []; 
+for u = {'spk_axon','axon','unit','u','cell','ax','id'}
+  if isfield(d,u{1}), spk_unit = d.(u{1}); break, end
+end
 
-error TODO_select_file_and_parse
+spk_time = []; 
+for u = {'spk_time','time','t'}
+  if isfield(d,u{1}), spk_time = d.(u{1}); break, end
+end
+
+info = struct;
+for u = {'epoch_info','file_info','info','metadata','meta'}
+  if isfield(d,u{1}), info = d.(u{1}); break, end
+end
+
+assert(~isempty(spk_time),'missing spike-times');
+
+nA = []; 
+if isfield(info,'n_units'), nA = info.n_units;
+elseif isfield(info,'n_axons'), nA = info.n_axons;
+elseif isfield(info,'n_cells'), nA = info.n_cells;
+elseif isfield(info,'n_spikes'), nA = info.n_spikes;
+elseif ~isempty(spk_unit), nA = nanmax(spk_unit); 
+end
+assert(~isempty(nA), 'missing n_axons'); 
+
+if isempty(spk_unit), 
+  disp('Assigning random spike units');
+  spk_unit = ceil(rand(size(spk_time))*nA); 
+end
+
+if nargin < 2, fs = 30; end
+for u = {'output_sample_rate','sample_rate','fs'}
+  if isfield(info,u{1}), fs = info.(u{1}); break, end
+end
+
+ok = ~isnan(spk_time) & ~isnan(spk_unit); 
+if ~all(ok)
+  warning('%d/%d spiketimes corrupted.',sum(~ok), numel(ok))
+  spk_time = spk_time(ok); 
+  spk_unit = spk_unit(ok);
+end
+
+
+if isfield(info,'time_start') && isfield(info,'time_end')  
+     time = (info.time_start) : (1/fs) : (info.time_end);   
+else time = floor(min(spk_time)) : (1/fs) : ceil(max(spk_time)); 
+end
+
+if isfield(info,'bin_dt')    
+     bin_x = min(time):(info.bin_dt):max(time);
+else bin_x = min(time):(1):max(time); % default 1 ms bins
+end, bin_y = hist(spk_time,bin_x);  %#ok<HIST>
+bin_y = bin_y ./ mean(diff(bin_x)) / nA * 1000;
+
+raster.epoch_info = info; % standardise variable names 
+raster.spk_time = spk_time;
+raster.spk_axon = spk_unit;
+
+raster.spk_rate = bin_y;
+raster.bin_time = bin_x; 
+raster.bin_rate = []; % undefined
+raster.pop_rate = numel(spk_time) / range(time) / nA * 1000;
+
+return
+
+function raster = convert_xml_raster(filename, fs)
+
+if ~exist('filename','var'), filename = 'example.xml'; end
+xml = tools.parse_xml(filename);  
+xml.filename = filename;
+
+%% x.Children().name representation
+the = @(x,n) x.Children(strncmpi({x.Children.Name},n,length(n)));
+attr_ = @(x,n) x.Attributes(strcmpi(n,{x.Attributes.Name})).Value;
+trim_ = @(x) x.Children(~contains({x.Children.Name},'#text'));
+
+xml.Children = trim_(xml); 
+
+info = the(xml,'config'); 
+info.Children = trim_(info);
+
+info.Data = struct; 
+info.Data.epoch_id = 0; 
+info.Data.filename = filename;
+info.Data.syntax = xml.Name;
+
+for ii = 1:numel(info.Children)
+  val = attr_(info.Children(ii),'value'); 
+  if ~isnan(str2double(val)), val = str2double(val); end
+  info.Data.(attr_(info.Children(ii),'name')) = val; 
+end, shared_info = info.Data; 
+
+shared_info.output_sample_rate = fs;
+
+epochs = the(xml,'epoch');
+
+if isempty(epochs), epochs = xml; end
+
+[epochs.Data] = deal([]); 
+
+%% Get spike-times
+
+for ee = 1:numel(epochs)
+
+  info = shared_info;
+  info.epoch_id = ee; 
+
+  for ii = 1:numel(epochs(ee).Attributes)
+    val = epochs(ee).Attributes(ii).Value; 
+    if ~isnan(str2double(val)), val = str2double(val); end
+    info.(epochs(ee).Attributes(ii).Name) = val;
+  end
+
+  pop_block = the(epochs(ee),'pop'); 
+  if isempty(pop_block)        
+    epochs(ee).Data = parseXMLPopulation(epochs(ee),info,[]);
+  else
+    clear pop_data
+    for pp = 1:numel(pop_block)
+      pop_data(pp) = parseXMLPopulation(pop_block(pp),info,pp); %#ok<AGROW>
+    end
+    for u = fieldnames(pop_block(pp).Data)'
+      epochs(ee).Data.(u{1}) = cat(1,pop_data.(u{1})); 
+    end
+    epochs(ee).Data.epoch_info = epochs(ee).Data.epoch_info(1);
+  end
+end
+
+raster = cat(1,epochs.Data); 
+
+return
+
+function raster = parseXMLPopulation(xml,info,pop_id)
+
+the = @(x,n) x.Children(strncmpi({x.Children.Name},n,length(n)));
+has_ = @(x,n) any(strcmpi(n,{x.Attributes.Name}));
+attr_ = @(x,n) x.Attributes(strcmpi(n,{x.Attributes.Name})).Value;
+
+spk_time = []; 
+spk_unit = []; 
+spk_pidx = []; 
+
+spikes = the(xml,'s');
+
+for ii = 1:numel(spikes)
+  spk_time = [spk_time; str2double(attr_(spikes(ii),'t'))]; %#ok<AGROW>
+  spk_unit = [spk_unit; str2double(attr_(spikes(ii),'u'))]; %#ok<AGROW>
+  if ~isempty(pop_id), spk_pidx = [spk_pidx; pop_id]; continue, end %#ok<AGROW>
+  if ~has_(spikes(ii),'p'), continue, end
+  spk_pidx = [spk_pidx; str2double(attr_(spikes(ii),'p'))]; %#ok<AGROW>      
+end
+
+units = the(xml,'unit');
+
+for ii = 1:numel(units)
+  uid = str2double(attr_(units(ii),'id'));
+  if ~isempty(pop_id), pid = pop_id; 
+  elseif has_(units(ii),'type'),
+    pid = str2double(attr_(units(ii),'type'));
+  elseif has_(units(ii),'axon_type'),
+    pid = str2double(attr_(units(ii),'axon_type'));
+  elseif has_(units(ii),'pop'),
+    pid = str2double(attr_(units(ii),'pop'));
+  else pid = []; 
+  end
+  t = textscan(units(ii).Children(1).Data,'%f');
+
+  spk_time = [spk_time; t{1}];       %#ok<AGROW>
+  spk_unit = [spk_unit; 0*t{1}+uid]; %#ok<AGROW>
+  if isempty(pid), continue, end
+  spk_pidx = [spk_pidx; 0*t{1}+pid]; %#ok<AGROW>
+end
+
+raster.epoch_info = info;
+raster.spk_time = spk_time;
+raster.spk_axon = spk_unit;
+if ~isempty(spk_pidx), raster.population_id = spk_pidx; end

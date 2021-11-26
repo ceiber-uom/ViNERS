@@ -34,8 +34,6 @@ if nargin == 1
 elseif nargin == 0, pattern_ID = 'A'; e = struct; 
 end
 
-if ~isfield(e,'DomainSize'), e.DomainSize = [6 6 3 0.31]; end % w l h
-
 switch pattern_ID
   %% Bionics Institute patterns
   case 'A'

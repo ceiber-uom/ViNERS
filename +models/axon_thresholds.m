@@ -13,7 +13,8 @@ function axon_thresholds(varargin)
 % -fix-Gaines, -fix-Sundt, -fix-MRG : run just the specified class
 %
 % DEPRECIATED update this documentation, imported lots of opts from
-% nerve_stim
+% nerve_stim. See also the wiki for more up-to-date documentation: 
+% https://gitlab.unimelb.edu.au/lab-keast-osborne-release/ViNERS/-/wikis/Models/axon_thresholds.m
 %
 %  -stim : which stimulus in eidors~/stimulus.mat to use? 
 %
@@ -30,9 +31,7 @@ working_dir = pwd;
 if any(named('-q')), printf = @(varargin) []; else printf = @fprintf; end
 printf('Running models.%s ... \n', mfilename);
 
-if isempty(strfind(ctfroot, 'MATLAB')) %#ok<*STREMP>
-    save_default_options ('-mat-binary'), 
-end
+if tools.isOctave, save_default_options ('-mat-binary'), end
 
 [EM,AX] = tools.parse_arguments(varargin, 'LOAD', ...
                               'eidors','eidors~/stim*.mat', 'axons');
@@ -79,8 +78,12 @@ for axon_type = axon_type_list
     else Ve = tools.load_Ve_field(EM,'-fascicle',ff, ... % Get Ve from EM 
                                      '-stim',1:size(stimulus.p,2),'-all'); 
     end
-      
+
+    if any(named('-clean-cache')), tools.cache('reset'); end
+    
     model_args = {Ve,pop.axon_model,'-spikes','-constantLength',8,'-stimulus',stimulus};
+    
+    if any(named('-f-len')), model_args{5} = get_('-f-len'); end
     if any(named('-volt')), model_args{3} = '-voltage'; end
     if any(named('-debug')), model_args{end+1} = '-debug'; end %#ok<AGROW>
     if any(named('-arg')), extra_args = get_('-arg'); 
@@ -88,7 +91,7 @@ for axon_type = axon_type_list
       model_args = [model_args extra_args]; %#ok<AGROW>
     end
     
-    if tools.from_trajectory(EM, AX.nerve), 
+    if tools.from_trajectory(EM, AX.nerve)
          axon_xy = tools.from_trajectory(EM, AX.nerve, pop.axon_xy);
     else axon_xy = pop.axon_xy;
     end
@@ -98,7 +101,8 @@ for axon_type = axon_type_list
                                    'fibreDiam',pop.fibre_diam(g), ...
                                      'g_ratio',pop.g_ratio(g), ...
                                          '-xy',axon_xy(g,:,:));
-    else model_args{5} = 6; % default length 6 mm
+    else
+       if ~any(named('-f-len')), model_args{5} = 6; end % default length 6 mm
        run_model = @(g) models.axon_model(g,model_args{:}, ...
                                    'fibreDiam',pop.fibre_diam(g), ...
                                          '-xy',axon_xy(g,:,:));      
@@ -106,6 +110,8 @@ for axon_type = axon_type_list
     
     axon_index = find(pop.fascicle == ff);    
     nA = numel(axon_index);
+    
+    if nA == 0, continue, end % No axons this population + fascicle 
 
     fprintf('\n%s\nSimulating %s Fascicle%d (%d axons)\n', ...
                           '='*ones(1,40),axon_type{1}, ff, nA)
@@ -121,7 +127,7 @@ for axon_type = axon_type_list
       for aa = 1:nA, results{aa} = feval(run_model,axon_index(aa)); end
       results = [results{:}]; % comes out as Nx1 cell array
       
-    elseif isempty(strfind(ctfroot, 'MATLAB')) %#ok<*STREMP> % octave parallel
+    elseif tools.isOctave % octave parallel
       if isempty(which('pararrayfun')), pkg load parallel; end
       
       results = pararrayfun(nproc-1, @(a) { set_cache(), ...
@@ -130,7 +136,7 @@ for axon_type = axon_type_list
       results = [results{:}];  % comes out as 1x2 cell array
       results = [results{2:2:end}]; % convert to struct array      
     else       
-      parfor aa = 1:nA,
+      parfor aa = 1:nA
         set_cache(); % otherwise files get lost
         results{aa} = feval(run_model,axon_index(aa)); 
       end
@@ -150,7 +156,7 @@ for axon_type = axon_type_list
       spike_fraction = numel(threshold) / src_total;
     end    
       
-    if isempty(pop.g_ratio),
+    if isempty(pop.g_ratio)
       tools.get_example_cachefiles ( {'diameter','threshold','velocity'}, 0:0.25:1 )
     else g_ratio = pop.g_ratio(axon_index); 
       tools.get_example_cachefiles ( {'diameter','threshold','velocity','g_ratio'}, 0:0.25:1 ) 
@@ -203,13 +209,13 @@ for axon_type = axon_type_list
               'called from:', working_dir };
       
     if ~exist(fileparts(output_file),'dir'), mkdir(fileparts(output_file)); end
-    if exist(output_file,'file'),
+    if exist(output_file,'file')
       warning('ViNERS:thresholds:overwriteFile', ...
               'Overwriting %s', output_file)
       % error TODO_fix_this_tools.file('get',~~~) % and also nerve_stim
     end
     
-    v_list = {'pop','axon_index','diameter','threshold','velocity', ...
+    v_list = {'pop','axon_index','diameter','threshold','velocity', 'stimulus', ...
                      'g_ratio', 'spiketimes', 'notes','units', ...
                      'selected_examples','example_index','example_data'};
     for v = 1:length(v_list)
@@ -221,6 +227,7 @@ for axon_type = axon_type_list
     save(output_file,v_list{:});
     clear(v_list{2:end}) % remove variables from workspace
 
+    
   end
 end
 
@@ -230,7 +237,7 @@ cd(working_dir)
 return
 
 %% Parse input argumens for axon_thresholds
-function [pop,stim] = process_input_args(get_,named,EM,AX)
+function [pop,stimulus] = process_input_args(get_,named,EM,AX)
 % Process input arguments, generates nE, nF, fascicle_list, ... 
 
 pop = AX.pop;
@@ -243,7 +250,7 @@ else                  fascicle_list = 1:nF;
 end
 
 % If -grid-XY replace axon positions with XY grid
-if any(named('-xy')),
+if any(named('-xy'))
  if ~any(named('-q')), disp('using XY grid'), end
  pop = make_axon_xy_grid(EM,pop,AX.nerve); 
 end
@@ -268,10 +275,10 @@ if any(named('-downs')), pop = downsample_axons(pop,get_('-downs')); end
 
 has_ext_ = @(a,b) strncmpi(fliplr(a),fliplr(b),length(b)); 
 
-if any(named('-stimu')), stim = get_('-stimu');
+if any(named('-stimu')), stimulus = get_('-stimu');
 else
   
-  stim = struct;
+  stimulus = struct;
   
   pw = 0.1;
   ipg = 0.05;
@@ -279,51 +286,72 @@ else
   if any(named('-pw')), pw = get_('-pw'); end
   if any(named('-ipg')), pw = get_('-ipg'); end
   
-  stim.t = 30+[0 pw pw+ipg 2*pw+ipg];
-  stim.p = [1; 0; -1; 0]; 
-  stim.a = []; % auto
+  stimulus.t = 30+[0 pw pw+ipg 2*pw+ipg];
+  stimulus.p = [1; 0; -1; 0]; 
+  stimulus.a = []; % auto
   
   clear pw ipg idx
 end
 
-if ischar(stim) % stimulus from file ? 
-  if any(stim == '~'), stim = tools.file(stim); end 
+% stimulus.filename = EM.filename;
+
+if ischar(stimulus) % stimulus from file ? 
+  if any(stimulus == '~'), stimulus = tools.file(stimulus); end 
   if ~any(named('-q')), fprintf('Loading %s\n', file); end
-  if is_ext_(stim,'.mat'),      stim = load(stim); 
-  elseif is_ext_(stim,'.json'), stim = tools.parse_json(stim);
-  elseif is_ext_(stim,'.xml'),  stim = tools.parse_xml(stim); 
+  if is_ext_(stimulus,'.mat'),      stimulus = load(stimulus); 
+  elseif is_ext_(stimulus,'.json'), stimulus = tools.parse_json(stimulus);
+  elseif is_ext_(stimulus,'.xml'),  stimulus = tools.parse_xml(stimulus); 
       error TODO_convert_XML_to_struct
-  else error('unknown filetype on "%s", expected {.mat, .json, .xml, or <struct>}', stim)
+  else error('unknown filetype on "%s", expected {.mat, .json, .xml, or <struct>}', stimulus)
   end
 end
 
-input_stimulus = stim; % because variable names get changed
+input_stimulus = stimulus; % because variable names get changed
 
 EM_stimPattern = cat(2,EM.model.stimulation.stim_pattern);
 isa_monopolar = all(EM_stimPattern(end,:)) || all(EM_stimPattern(end-1,:)); 
 
 cc = 1;
+if isfield(stimulus,'pair'), cc = stimulus.pair; end 
 if any(named('-pair')), cc = get_('-pair'); end % vague synonyms
 if any(named('-elec')), cc = get_('-elec'); end
 if any(named('-chan')), cc = get_('-chan'); end
 
 if any(named('-mono'))
   if ~isa_monopolar, error('%s was generated with bipolar stimuli', EM.filename); end
-  assert(size(stim.p,2) == numel(cc),'stimulus pattern size must match number of specified channels')
+  assert(size(stimulus.p,2) == numel(cc),'stimulus pattern size must match number of specified channels')
   EM.v_extracellular = EM.v_extracellular(:,cc);
     
 elseif isa_monopolar
   if numel(cc) == 1, cc = mod(cc-[1 0],nE)+1; end % default: sequential bipole
-  scale = [1; -(ones(numel(cc)-1,1)/(numel(cc)-1))];
+  if all(size(stimulus.p) > 1) % intra-NEURON field composition
+    
+    scale = zeros(nE,size(stimulus.p,2)); % compose fields using matrix mult
+    for pp = 1:size(cc,1)
+      nnz = sum(cc(pp,2:end) > 0);
+      weight = [1 -ones(1,size(cc,2)-1)/(nnz)]; 
+      for ww = 1:size(cc,2)
+        if cc(pp,ww) == 0, continue, end
+        scale(cc(pp,ww),pp) = weight(ww);
+      end
+    end
+    cc = (1:nE); % make this equivalent to "EM.v_extracellular(:,:)"
+  else
+    scale = [1; -(ones(numel(cc)-1,1)/(numel(cc)-1))];
+    if ~any(named('-q'))
+      fprintf('Converting to bipolar stimulus, E%s\n', sprintf('%d',cc))
+    end
+  end
+  
   if any(named('-pattern')), scale = reshape(get_('-pattern'),numel(cc),[]); end
   EM.v_extracellular = EM.v_extracellular(:,cc) * scale;   
+    
 else 
   if numel(cc) > 1, error('%s was generated with bipolar stimuli', EM.filename); end
   EM.v_extracellular = EM.v_extracellular(:,cc);
 end
 
-
-assert(size(stim.p,2) == size(EM.v_extracellular,2), ...
+assert(size(stimulus.p,2) == size(EM.v_extracellular,2), ...
         'stimulus pattern size must match number fields')
 
 %%
