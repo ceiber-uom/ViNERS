@@ -18,10 +18,6 @@ c2_wid = 2.5
 c2_thickness = 0.3
 c2_radius = 1
 
-fascicle_id = 100
-
-// End variable definition file
-
 // #18: // Mesh.CharacteristicLengthMax = $exterior_len;
 exterior_len = 0.5
 

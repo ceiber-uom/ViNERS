@@ -20,7 +20,7 @@ BooleanUnion{ Volume{1}; Delete; }{ Volume{2}; Delete; }
 // Box(vol_id+1) = {-5.0,0.31,-5.0, 10.0, 1.69, 10.0}; // Prostate
 
 // Execute spline script 
-@[mesh.insert_gmsh_fascicles($fascicle_id)]
+@[mesh.insert_gmsh_fascicles]
 
 // Mesh.RemeshParametrization = 7;
 Mesh.CharacteristicLengthMax = $exterior_len;
