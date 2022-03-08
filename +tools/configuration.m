@@ -22,6 +22,10 @@ function [output] = configuration(varargin)
       system(sprintf('touch "%s"',CONFIG_file));
       % fclose(fopen(CONFIG_file,'at'));
     end
+    if ~exist(CONFIG_file,'file') % touch failed, file not found
+        CONFIG_file = tools.file('~/+tools/configuration.json');
+        warning('ViNERS not correctly installed into ~/code/')
+    end
     if any(named('open')), edit(CONFIG_file), return, end
   end
 

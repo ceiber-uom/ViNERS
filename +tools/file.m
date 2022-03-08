@@ -474,6 +474,9 @@ if isempty(this)
   this.root = fileparts(mfilename('fullpath'));  
   this.file = [this.root filesep 'running.json'];
   this.root = regexprep(this.root,'([\\/])code[\\/].*$','');  
+  if contains(this.root,'+tools')
+    this.root = regexprep(this.root,'([\\/])\+tools.*$','');  
+  end
 end
 
 if isempty(which('feature')), this.pid = getpid; % e.g. octave
