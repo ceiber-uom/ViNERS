@@ -133,7 +133,29 @@ for ff = 1:numel(list)
     
     
   subplot(3,2,3-2*is_my); hold on
-  scatter(xy(:,1),xy(:,2),diam*3,stim.threshold,'o','LineWidth',1.1)  
+  if any(named('-contour'))
+
+    [gx,gy] = meshgrid(linspace(min(xy(:,1)), max(xy(:,1)), 301), ...
+                       linspace(min(xy(:,2)), max(xy(:,2)), 301));
+    ok = isfinite(stim.threshold);
+
+    if any(named('-df')), d_filter = get('-df');
+      if any(diam >= min(d_filter) & diam <= max(d_filter))
+        ok = ok & diam >= min(d_filter) & diam < max(d_filter); 
+      end
+    end
+
+    th_field = scatteredInterpolant(xy(ok,:), stim.threshold(ok),'natural','none');
+    contour(gx,gy,th_field(gx,gy))
+
+    if any(named('-scat'))
+      scatter(xy(:,1),xy(:,2),diam*3,stim.threshold,'o','LineWidth',1.1)  
+    end
+       % insert contour plot here
+  else
+      scatter(xy(:,1),xy(:,2),diam*3,stim.threshold,'o','LineWidth',1.1)  
+  end
+
     
   subplot(3,2,4-2*is_my); hold on
   scatter(diam,stim.threshold,diam*3,stim.threshold,'o','LineWidth',1.1)
@@ -150,10 +172,10 @@ for ff = 1:numel(list)
       I_stim{ty(1)} = [I_stim{ty(1)}; stim.threshold];
   end
     
-  axon_myelin(ty) = pop.myelinated;
-  if ~any(named('-pop-col')), axon_colors(ty,:) = pop.color; end
-  if iscell(pop.axon_model), axon_names(ty) = pop.axon_model;
-  else                       axon_names(ty) = {pop.axon_model};
+  axon_myelin(ty) = pop.myelinated; %#ok<AGROW> 
+  if ~any(named('-pop-col')), axon_colors(ty,:) = pop.color; end %#ok<AGROW> 
+  if iscell(pop.axon_model), axon_names(ty) = pop.axon_model;    %#ok<AGROW> 
+  else                       axon_names(ty) = {pop.axon_model};  %#ok<AGROW> 
   end
 end
 

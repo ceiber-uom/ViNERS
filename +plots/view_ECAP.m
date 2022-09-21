@@ -165,7 +165,7 @@ roi = data.info.time >= view_ROI(1) & data.info.time <= view_ROI(2) ;
 time = data.info.time(roi);
 
 delta_y = 1; 
-if any(named('-y')), delta_y = '-y'; end
+if any(named('-y')), delta_y = get_('-y'); end
 
 w_max = max(data.wave(end).wave(roa,2));
 
@@ -323,7 +323,9 @@ for ii = index
   
   mcw_args = {'-chan',[1 2; 3 4],'-quick', '-noise', 0.0275};  
   if any(named('-filter')), mcw_args{end} = 0.275; end
-  if any(named('-noise')),  mcw_args{end} = get_('-noise'); end  
+  if any(named('-noise')),  mcw_args{end} = get_('-noise'); end
+  if any(named('-chan')),  mcw_args{2} = get_('-chan'); end
+  if any(named('-elec')),  mcw_args{2} = get_('-elec'); end
   
   if any(named('-type')), mcw_args = [mcw_args {'-type',get_('-type')}];       %#ok<AGROW>
   elseif ~any(named('-class')), mcw_args = [mcw_args {'-type',{[1 2 3 4]}}]; %#ok<AGROW>

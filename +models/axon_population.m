@@ -79,6 +79,10 @@ if any(named('help')) || any(named('-h')), display_help_menu(named), return, end
 nerve = get_nerve_outline(varargin{:}); 
 is_column = @(t,v) any(strcmp(t.Properties.VariableNames,v));
 
+if any(named('-tiger'))
+    axon_types.Model(strcmp(axon_types.Model,'Sundt')) = {'Tigerholm'};
+end
+
 %% How many axons? (note: number of axons can be downsampled later)
 if is_column(axon_types,'per_mm2')   
   if ~(any(named('-use-count')) && is_column(axon_types,'Count'))
@@ -98,7 +102,7 @@ if any(named('-down')), scale_factor = get_('-down'); % Down-sample axon_types
   axon_types.Count = round(axon_types.Count .* reshape(scale_factor,[],1)); 
   axon_types.Count(axon_types.Count < 1) = 1;   
   warning('ViNERS:make_axon_population:earlyDownsample',...
-           'Downsampling axon population by %g, %s. %s %s', 1./scale_factor, ...
+           'Downsampling axon population by %g, %s. %s %s', 1./scale_factor(1), ...
            'computed recordings or ECAPs may not be accurate', ...
            'Downsampling can be accomplished in later modules which', ...
            'better preserves whole-nerve estimates of signal amplitudes.')
@@ -261,7 +265,7 @@ d('                     gives 20% more axons in generated file')
 d('-down [amount] : down-sample axons by [amount]. Values greater than 1 ')
 d('                 are interpreted as factors e.g. -down 2 and -down 0.5 ')
 d('                 result in the same outcome: half as many axons. ')
-d('-source [file] : define source axons file for axon subtype definitions.')
+d('-remake [file] : define source axons file for axon subtype definitions.')
 d('                 Otherwise, new clusters are generated and you will be ')
 d('                 required to run models.membrane_currents')
 d('-ngroups [24]  : define # of axon groups for sub-type clustering to')
@@ -895,6 +899,7 @@ if any(named('-anat')), nerve = get_('-anat');
   end
 else nerve = mesh.insert_gmsh_fascicles('-info','-check-units');  
 end
+if isfield(nerve,'splines'), nerve = nerve.splines; end
 
 % Get fasicle outlines
 if iscell(nerve.outline), nerve.fascicles = nerve.outline{1}; 
@@ -906,7 +911,6 @@ if isfield(nerve,'Attributes') && isfield(nerve,'Children') % XML leftovers
 end
 
 if isfield(nerve,'splines'), nerve = rmfield(nerve,'splines'); end
-
 
 if max(abs(nerve.fascicles(:))) > 10 && ~any(named('-units-no-c'))
   nerve.coeffs = nerve.coeffs / 1e3;
@@ -1363,7 +1367,7 @@ D = evalin('caller','D');
 
 sam = struct;
 
-if any(named('-source')), sourceFile = get_('-source'); 
+if any(named('-remake')), sourceFile = get_('-remake'); 
   %%  
   sourceMap = load(sourceFile);
   
@@ -1649,9 +1653,10 @@ y0 = reshape(dat.y,1,[]);
 dx = median(diff(dat.x)) / 2;
 nB = round(n*y0); 
 
-while sum(nB) < n % add points to match goal count
-    [~,s] = find(rand*sum(nB) >= cumsum(nB),1,'last');
+while sum(nB) < n % add points to match goal count    
+    [~,s] = find(rand*sum(nB) >= cumsum(nB),1,'last');    
     if nB(s) == 0, [~,s] = max(nB); end
+    if isempty(s), [~,s] = max(nB); end
     assert(nB(s) > 0)
     nB(s) = nB(s)+1; 
 end

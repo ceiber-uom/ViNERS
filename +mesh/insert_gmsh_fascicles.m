@@ -399,7 +399,6 @@ contours = the(xml,'contour');
 
 % DEV_demo = mesh.read_dat_file; 
 % DEV = evalin('base','DEV_demo'); 
-%%
 
 s.coeffs = {};
 s.outline = {};
@@ -463,13 +462,9 @@ for ii = 1:numel(contours)
     end
 end
 
-%% Put fascicles first in sequence
+%% Put fascicles first in the sequence of objects returned 
 
-if numel(s.type) == 1
-  s.type = s.type{1}; 
-  s.coeffs = s.coeffs{1};
-  s.outline = s.outline{1};
-else
+if numel(s.type) > 1 % If there's only one kind of object, use that one. 
   
   keyword_list = {'FascicleInterior','Fascicle','Inner peri'};
   if any(named('-keyword')), 
@@ -481,8 +476,9 @@ else
   for keyword = keyword_list
 
     k = strncmpi(s.type,keyword{1},length(keyword{1}));
-    if ~any(k), continue, end 
-    k = [find(k) find(~k)];
+    if ~any(k), continue, end % wrong keyword for this file
+    k = [find(k) find(~k)];   % fascicles, then not-fascicles    
+    assert(all(ismember(k,1:numel(k)))) % don't lose anything
     
     s.coeffs = s.coeffs(k);
     s.outline = s.outline(k);

@@ -1,4 +1,18 @@
 
+% This script fixes the EIDORS overloads issue if Andy Adler and the eidors
+% gang haven't gotten around to fixing this themselves yet. 
+% 
+% This script modifies the EIDORS source code! use with caution ... once. 
+% 
+% Step 1: all of the .m files in the eidors/overloads folder get "eidors_"
+% prepended to the filename. 
+% 
+% Step 2: all of the eidors code gets searched for references to the munged
+% overloads. any line of code which uses a modified file is changed to
+% point to the new file.
+% 
+% Step 3: profit.
+
 s_ = @(varargin) system(sprintf(varargin{:})); % system call
 p_ = @(x,varargin) [x.folder filesep x.name varargin{:}]; % path expander
 
@@ -8,16 +22,17 @@ list_to_change = dir('./overloads/*.m');
 
 for ii = 1:numel(list_to_change)            
     new_name{ii} = ['eidors_' list_to_change(ii).name];   
-    if contains(new_name{ii},'eidors_eidors_'), 
-        new_name{ii} = ''; continue, end
-    s_('REN "%s" "%s"', p_(list_to_change(ii)), new_name{ii});
+    if contains(new_name{ii},'eidors_eidors_'), % avoid double changes
+        new_name{ii} = ''; continue, 
+    end
+    s_('REN "%s" "%s"', p_(list_to_change(ii)), new_name{ii});    
 end
-
 
 new_name = strrep(new_name,'.m','\('); 
 old_name = strrep(new_name,'eidors_','');
 
-%%
+%% This section 
+
 list_to_search = dir('./**/*.m'); 
 
 for ii = 1:numel(list_to_search)

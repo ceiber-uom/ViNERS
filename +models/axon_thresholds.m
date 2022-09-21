@@ -284,7 +284,7 @@ else
   ipg = 0.05;
   
   if any(named('-pw')), pw = get_('-pw'); end
-  if any(named('-ipg')), pw = get_('-ipg'); end
+  if any(named('-ipg')), ipg = get_('-ipg'); end
   
   stimulus.t = 30+[0 pw pw+ipg 2*pw+ipg];
   stimulus.p = [1; 0; -1; 0]; 
@@ -502,16 +502,19 @@ for ty = 1:nType
   values = [this.fibre_diam this.axon_diam this.g_ratio this.axon_xy];
   values = zscore(values);
   
-  sample = false(size(values(:,1))); 
-  
-  for ff = 1:nF % get samples within each fascicle 
-    
-    f_sel = (this.fascicle == ff);
+  sample = false(size(values(:,1)));
+
+  norm_ = @(d) sqrt(sum(d.^2,2)) ; % L2 norm
+  % norm_ = @(d) sum(abs(d),2) ;   % L1 norm
+
+  for ff = 1:nF % get samples within each fascicle     
+    %%
+    f_sel = find(this.fascicle == ff);
       
-    target = ceil(fraction(ty) * sum(f_sel));
+    target = ceil(fraction(ty) * numel(f_sel));
     v = values(f_sel,:);
     
-    typ = nanmedian(v);
+    typ = nanmedian(v); %#ok<NANMEDIAN> 
     [~,sel] = min(sum((v-typ).^2,2));  
 
     extrema = [];
@@ -519,16 +522,44 @@ for ty = 1:nType
     [~,extrema(:,2)] = max(v); 
     extrema = unique(reshape(extrema,[],1)); 
 
-    while numel(sel) < target
+    if false
+        %% Set up debug visualisation
+        clf, %#ok<UNRCH> 
+        h = gobjects(0);
+        h(1) = scatter(v(:,end-1), v(:,end), [],'.'); %  v(:,1)
+        axis image off, hold on
+        h(2) = plot( v(sel,end-1),v(sel,end),'rx','MArkerSize',5);
+    end
 
-      u = arrayfun(@(s) sum((v - v(s,:)).^2,2), sel, 'unif',0);    
-      e = arrayfun(@(s) sum((v - v(s,:)).^2,2), extrema, 'unif',0);
-      d = mean([u{:} 0.2*[e{:}]],2); d(sel) = nan; 
+    % norm_ = @(d) sqrt(sum(d.^2,2)) ;   % L2 norm
+    norm_ = @(d) sum(abs(d),2) ; 
+ 
+    % tic
+    while numel(sel) < target
+    
+      sel = unique([sel round(linspace(1,numel(f_sel),target))]); 
+      break
+
+      u = arrayfun(@(s) norm_( v - v(s,:) ), sel, 'unif',0);    
+      e = arrayfun(@(s) norm_( v - v(s,:) ), extrema, 'unif',0);
+      d = min([u{:} 2*[e{:}]],[],2); d(sel) = nan; 
       [~,ix] = nanmax(d); 
       sel = [sel; ix];  %#ok<AGROW>
-    end
+      
+      if false
+          % Debug visualisation code
+          h(1).CData = d; %#ok<UNRCH> 
+          h(2).XData = v(sel,end-1);
+          h(2).YData = v(sel,end);
+          % h(2).ZData = v(sel,1);
     
-    f_sel = find(f_sel);
+          [~,~,b] = ginput(1);
+          if isempty(b), continue, end
+          if b == 27, error('stopped'), end
+          if b == ' ', input('enter to continue ...'), end
+      end
+    end    
+    % toc    
     sample(f_sel(sel)) = true; 
   end
   

@@ -18,7 +18,7 @@ end
 named = @(v) strncmpi(v,varargin,length(v)); 
 tools.setupEIDORS; 
 
-if nargin == 0 || isempty(filename) % output file
+if nargin == 0 || isempty(filename) || strcmp(filename,'?') % output file
   filename = tools.file('sub~/eidors/*.mat','-prompt');
 elseif isstruct(filename), m = filename; filename = ''; 
 elseif strcmpi(filename,'SOURCE')

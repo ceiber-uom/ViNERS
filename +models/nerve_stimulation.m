@@ -146,7 +146,7 @@ for ff = fascicle_list % Loop over fascicles
     
     if any(named('-no-p'))
       printf('running in -no-parallel mode\n')
-      for aa = 1:nA, results{aa} = feval(run_model,axon_index(aa)); end
+      for aa = 1:nA, results{aa} = feval(run_model,axon_index(aa)); end %#ok<FVAL> 
       results = [results{:}]; % comes out as Nx1 cell array
       
     elseif tools.isOctave % octave parallel
@@ -284,7 +284,7 @@ end
 
 if any(named('-units-um')) || abs_ax_coord > max_ax_coord
   if ~any(named('-units-um'))
-    warning('ViNERS:inputAxonUnits', 'Converting output units from �m to mm.')
+    warning('ViNERS:inputAxonUnits', 'Converting output units from um to mm.')
   end
   pop.fibre_xy = pop.fibre_xy / 1000; % um to mm
   pop.unmyelinated_xy = pop.unmyelinated_xy / 1000; % um to mm
@@ -557,10 +557,14 @@ for ty = 1:nType
     extrema = unique(reshape(extrema,[],1)); 
 
     while numel(sel) < target
+        
+      sel = unique([sel round(linspace(1,numel(f_sel),target))]); 
+      break
 
       u = arrayfun(@(s) sum((v - v(s,:)).^2,2), sel, 'unif',0);    
       e = arrayfun(@(s) sum((v - v(s,:)).^2,2), extrema, 'unif',0);
-      d = mean([u{:} 0.2*[e{:}]],2); d(sel) = nan; 
+      % d = mean([u{:} 0.2*[e{:}]],2); d(sel) = nan; 
+      d = min([u{:} 2*[e{:}]],[],2); d(sel) = nan; 
       [~,ix] = nanmax(d); 
       sel = [sel; ix];  %#ok<AGROW>
     end

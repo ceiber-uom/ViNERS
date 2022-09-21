@@ -4,6 +4,22 @@ function gmsh = insert_gmsh_electrodes(varargin)
 % Reads an input file (such as example.json) and outputs the GMSH template 
 % code necessary to create the electrode geometry. Currently only handles 
 % planar rectangular, circular, and cylyndrical electrodes.
+%
+% Default Options: 
+% 
+% % Set up parameter defaults
+% default.ElectrodePositions = [1.85 0 0; 1.1 0 0; -1.1 0 0; -1.85 0 0];
+% default.ElectrodeDimensions = [0.2 0.1 1.8]; % L W H
+% default.ElectrodeAngle = []; 
+% default.ElectrodeKind = {'Rectangular'};
+% default.ElectrodeTypeIndex = 1; 
+% default.InsetDepth = 0.1;
+% default.InsetRadius = 0;
+% 
+% default.DomainSize = [6 6 6]; % mm
+% default.DomainName = {'Interstitial'};
+% 
+% default.gmsh_CarrierIndex = 1; 
 % 
 % Called by *.geo.template via tools.make_from_template.
 %
@@ -18,10 +34,27 @@ elseif nargin >= 1 && ischar(varargin{1})
 else G = get_layout([],varargin{:});
 end
 
+% G field names have been modified from their original, verbose forms: 
+% only the capital letters have been retained. In the case of an
+% underscore, the pre-underscore text is retained e.g. "gmsh_CI"
+% see FUNCTION compress_fieldnames
+
 nE = size(G.EP,1);
 
+% Validate input parameters
 if numel(G.ETI) < nE, G.ETI = repmat(G.ETI(:),nE,1); end
-if numel(G.ID) < max(G.ETI), G.ID = repmat(G.ID,nE,1); end
+
+
+if isempty(G.ER) && any(strncmpi(G.EK, 'circ',2))
+    G.ER = G.ED(:,1)/2; % set to width / 2
+    G.ER(~strncmpi(G.EK,'ci',2)) = 0; % and set non circles to 0
+end
+for expand_fields = {'ID','EK','gmsh_CI','ER'} % expand each of these
+  if numel(G.(expand_fields{1})) < nE
+    G.(expand_fields{1}) = repmat(G.(expand_fields{1}),nE,1); 
+  end
+end
+
 
 % Assuming: Volume(1) is the electrode carrier (gmsh_CarrierIndex)
 w_ = @(g,f,varargin) sprintf(['%s\n' f],g,varargin{:}); 
@@ -62,7 +95,7 @@ for ee = 1:nE % Loop 1: electrode cut-out
       gmsh = w_(gmsh,'Rotate{ {1,0,0}, {0,0,0}, %0.9f } { Volume{el}; }', deg2rad(G.EA(ee)));
     end
     gmsh = w_(gmsh,'BooleanDifference{ Volume{%d}; Delete; }{ Volume{el}; Delete; }', ...
-                    G.gmsh_CI);
+                    G.gmsh_CI(ee));
 end
 
 
@@ -131,7 +164,9 @@ function gmsh = insert_domain_medium(gmsh, G, nE)
 
 w_ = @(g,f,varargin) sprintf(['%s\n' f],g,varargin{:}); 
 
-layers = []; 
+layers = []; %#ok<NASGU> 
+
+G.gmsh_CI = unique(G.gmsh_CI);
 
 if any(G.DS < 0)
   nb = G.DS(G.DS < 0); 
@@ -175,13 +210,21 @@ for ii = 1:numel(layers)
                                                   layer_names{ii});
 end
 
-gmsh = w_(gmsh,'BooleanDifference{ Volume{vol_id}; Delete; }{ Volume{%d}; }', G.gmsh_CI);
+for ii = 1:numel(G.gmsh_CI)
+  gmsh = w_(gmsh,'BooleanDifference{ Volume{vol_id}; Delete; }{ Volume{%d}; }', G.gmsh_CI(ii));
+end
 
 for ee = 1:nE % Loop 3: BooleanDifference
     gmsh = w_(gmsh,'BooleanDifference{ Volume{vol_id}; Delete; }{ Volume{el+%d}; }', ee-1);
 end
 
-gmsh = w_(gmsh,'\nPhysical Volume("PDMS") = {%d};', G.gmsh_CI);
+if numel(G.gmsh_CI) == 1
+    gmsh = w_(gmsh,'\nPhysical Volume("PDMS") = {%d};', G.gmsh_CI);
+else
+  for ii = 1:numel(G.gmsh_CI)
+    gmsh = w_(gmsh,'\nPhysical Volume("PDMS_%d") = {%d};', ii,G.gmsh_CI(ii));
+  end
+end
 for ii = 1:numel(layers)
     gmsh = w_(gmsh,'Physical Volume("%s") = {vol_id+%d};',layer_names{ii},ii-1);
 end

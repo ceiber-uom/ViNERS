@@ -1,13 +1,13 @@
 
-function sensitivity_section(varargin)
-% fascicle_potential_section(filename, ...)
-% make 2d cross-sections of stimulation and recording sensitivity profiles
+function view_stimulation(varargin)
+% view_stimulation(filename, ...)
+% make 2d cross-sections of stimulation or recording sensitivity profiles
 % (a different viewer than plots.view_sensitivity, focus on section planes)
 % this also shows the mesh at the cut plane (at the transverse plane) for 
 %  additional context
 % 
-% sensitivity_section('-newest', ...) plots most recent file
-% sensitivity_section('-pdf', ...) makes a PDF from all the files in
+% plots.view_stimulation('-newest', ...) plots most recent file
+% plots.view_stimulation('-pdf', ...) makes a PDF from all the files in
 %                                         this subject (or -pdf-list, ...)
 % 
 % Optional arguments: -z [1.875 mm] - location of transverse section plane
@@ -19,7 +19,6 @@ function sensitivity_section(varargin)
 % 
 % CDE 24-Nov-2020 v0.3
 
-if 0, models.pelvic_nerve('-stimulus');  end %#ok<UNRCH>
 warning off MATLAB:scatteredInterpolant:DupPtsAvValuesWarnId
 
 named = @(v) strncmpi(v,varargin,length(v)); 
@@ -56,7 +55,7 @@ if any(named('-chan')), elec_id = get_('-chan'); end
 if any(named('-elec')), elec_id = get_('-elec'); end
 
 
-disp(['Viewing ' strrep(filename,tools.file,'~')])
+fprintf('Viewing %s\nElec %d\n',strrep(filename,tools.file,'~'), elec_id)
 load(filename) %#ok<LOAD>
 
 
@@ -116,8 +115,15 @@ if multi_geometry_model, v_extracellular = v_extracellular{1}; end
 z_index = 'auto'; % 1.875;
 if any(named('-z')), z_index = get_('-z'); end
 if ischar(z_index), 
-  idx = find(max(v_extracellular(obj_xyz_('Fascicle1'),elec_id)) == ...
-                 v_extracellular(:,elec_id),1); 
+
+    if strncmpi(z_index,'pos',3)
+       v_max = max(v_extracellular(obj_xyz_('Fascicle1'),elec_id)); 
+    elseif strncmpi(z_index,'neg',3)
+         v_max = min(v_extracellular(obj_xyz_('Fascicle1'),elec_id));
+    else v_max = max(abs(v_extracellular(obj_xyz_('Fascicle1'),elec_id))); 
+    end
+
+  [~,idx] = min(abs(v_max - v_extracellular(:,elec_id))); 
   z_index = model.nodes(idx,1) + 0;
 end
 
@@ -245,13 +251,16 @@ else
     x = xy_(1,obj_xyz_(f{1}));
     y = xy_(2,obj_xyz_(f{1}));
 
-    y = y - median(y) + y_offset;  y0 = y0 + dY;  
+    % yc = median(y);
+    yc = (max(y)+min(y))/2; 
+
+    y = y - yc + y_offset;  y0 = y0 + dY;  
     avg_vxc = scatteredInterpolant(x,y,v_extracellular(obj_xyz_(f{1}),elec_id),si_mode{:});
     [gx,gy] = meshgrid(linspace(-x_range,x_range,401), linspace(min(y),max(y),101));
 
     p = avg_vxc(gx,gy); 
     % p = p - median(p(:));
-    imagesc(gx(1,:),gy(:,1)+y0-dY,p), hold on
+    imagesc(gx(1,:),gy(:,1)+y0+yc-dY,p), hold on
 
     % cla, hold on
     % scatter(x,y,[],v_meas(obj_xyz_(f{1}),1),'o','filled')
@@ -260,7 +269,7 @@ else
     % trisurf(tri(in_f,:), m.nodes(:,3),m.nodes(:,2),m.nodes(:,1),v_meas(:,1),'EdgeColor',[0 0 0])
   end
 
-  axis([-x_range x_range -dY y0+dY/2]), axis xy
+  axis([-x_range x_range -dY y0+dY/2+yc/2]), axis xy
   tools.tidyPlot
 
   % ok = (all(reshape(model.nodes(model.elems,3),[],4) >= 0,2)); 

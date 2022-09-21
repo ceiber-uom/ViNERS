@@ -41,8 +41,9 @@ end
 axis equal, tools.tidyPlot, grid on, ax = axis; 
 
 
-
 if any(named('-no-w')) || any(named('-now')), return, end
+
+if ax(3) > 0, ax(3) = -50; end % prevent misleading impression on array surface
 
 fill(ax([1 2 2 1 1]),[0 0 ax([3 3]) 0],G(3),'FaceAlpha',0.3,'EdgeColor',G(3),'LineWidth',1.1)
 

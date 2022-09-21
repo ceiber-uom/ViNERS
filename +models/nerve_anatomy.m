@@ -1,9 +1,9 @@
 
 function nerve_anatomy (varargin)
-% nerve_anatomy(geometry, ...) runs the electroanatomical model implemented
-% using EIDORS for electrical stimulation & recording from a peripheral 
-% nerve, including meshing the model in gmesh and gnerating any neccessary
-% thin-layers
+% models.nerve_anatomy(geometry, ...) runs the electroanatomical model 
+% implemented using EIDORS for electrical stimulation & recording from a  
+% peripheralnerve, including meshing the model in gmesh and gnerating any 
+% neccessary thin-layers (e.g. perineurium). 
 % 
 % This is iteration #3 of this code, which has fixed issues with lost
 % mesh points and uses ./+mesh/pelvic_nerve.geo.template
@@ -683,11 +683,14 @@ if any(named('-point-e'))
     get_ = evalin('caller','get_');
     point_electrodes = get_('-point-e');
     for ii = 1:size(point_electrodes,1)
-       [~,idx] = min( sum((m.nodes - point_electrodes(ii,:)).^2,2));        
+       [di,idx] = min( sum((m.nodes - point_electrodes(ii,:)).^2,2));        
         m.nodes(idx,:) = point_electrodes(ii,:);
         m.electrode(end+1) = m.electrode(end);
         m.electrode(end).nodes = uint32(idx);
         m.electrode(end).name = sprintf('PtElec%d', ii);
+
+        fprintf('inserted %s (moved 1 point by %0.5f mm)\n', ...
+                 m.electrode(end).name, sqrt(di) )
     end
 end
 

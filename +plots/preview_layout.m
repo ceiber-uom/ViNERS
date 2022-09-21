@@ -32,15 +32,27 @@ if any(named('-t'))
     e.ElectrodePositions = e.ElectrodePositions(:,[3 2 1]);
 end
 
+if isfield(e,'ElectrodeKind') && isfield(e,'ElectrodeTypeIndex')
+  if numel(e.ElectrodeKind) < max(e.ElectrodeTypeIndex)
+    e.ElectrodeKind = repmat(e.ElectrodeKind,1,nC);
+  end
+end
+
 for ii = 1:nC
-  
-  xy = [-1 1 1 -1 -1; -1 -1 1 1 -1]/2 .* ...
-       e.ElectrodeDimensions(e.ElectrodeTypeIndex(ii),[1 3])'; 
+
+  eti = e.ElectrodeTypeIndex(ii); 
+
+  if isfield(e,'ElectrodeKind') && strncmpi(e.ElectrodeKind{eti},'ci',2)
+       xy = [cos(linspace(0,2*pi,81)); sin(linspace(0,2*pi,81))];    
+       xy = xy * e.ElectrodeRadius(eti); 
+  else xy = [-1 1 1 -1 -1; -1 -1 1 1 -1]/2 .* ...
+           e.ElectrodeDimensions(eti,[1 3])'; 
+  end
   plot(xy(1,:) + e.ElectrodePositions(ii,1), ...
        xy(2,:) + e.ElectrodePositions(ii,3), ...
-       'Linewidth',1.8,'Color',C(ii,:))
-     text(e.ElectrodePositions(ii,1),e.ElectrodePositions(ii,3), ...
-          num2str(ii),'Fontsize',12,'Color',C(ii,:),'Horiz','center')
+           'Linewidth',1.8,'Color',C(ii,:))
+  text(e.ElectrodePositions(ii,1),e.ElectrodePositions(ii,3), ...
+         num2str(ii),'Fontsize',12,'Color',C(ii,:),'Horiz','center')
 end
 
 

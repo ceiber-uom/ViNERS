@@ -163,7 +163,7 @@ for page_id = 1:nPages
   suptitle(sprintf('E%d-E%d Bipolar Recordings', min(erange(:)),max(erange(:))));
   
   %% make PDF page
-  plots.PDF_tools(gcf,'A-%03d-waves.ps',page_id,'-move','-resize','-portrait'); 
+  plots.PDF_tools(gcf,do_PDF,'A-%03d-waves.ps',page_id,'-move','-resize','-portrait'); 
   
 end
 
@@ -223,7 +223,7 @@ for page_id = 1:size(elec_map,1)
   suptitle(sprintf('E%d.%d Fascicle sensitivity', elec_map(page_id,:)))
   
   %%
-  plots.PDF_tools(gcf,'B-%03d-waves.ps',page_id,'-move','-resize','-portrait'); 
+  plots.PDF_tools(gcf,do_PDF,'B-%03d-waves.ps',page_id,'-move','-resize','-portrait'); 
 end
 
 plots.PDF_tools('compile',do_PDF,'RMS Response Curves (%d).pdf')
@@ -480,7 +480,7 @@ for r_id = 1:length(rates)
           sprintf('f#%d',ff),'Color','k','Horiz','center','fontsize',8)
   end
   axis image, tools.tidyPlot, grid on
-  ylim([-0.03 1] * max(ylim))
+  if min(ylim) > 0, ylim([-0.03 1] * max(ylim)), end
   set(gca,'XTick',-1:0.1:1,'YTick',-1:0.1:1)
 
   subplot(4,3,[7 10]), cla, hold on
@@ -558,7 +558,7 @@ for ff = 1:nF
 end
 
 axis image, tools.tidyPlot, grid on
-ylim([-0.03 1] * max(ylim))
+if min(ylim) > 0, ylim([-0.03 1] * max(ylim)), end
 set(gca,'XTick',-1:0.1:1,'YTick',-1:0.1:1)
 set(gca,'UserData','nerve')  
 

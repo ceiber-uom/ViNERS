@@ -101,7 +101,7 @@ if any(named('-3d')), basic_3d_plot(EM,electrode_list), return, end
 
 
 if any(electrode_list > nE) 
-  warning('File x only has Y electrodes')
+  warning('File %s only has %d electrodes', EM.filename, nE)
   electrode_list(electrode_list > nE) = []; 
 end
 
@@ -282,6 +282,7 @@ if nargin < 1 && evalin('caller','exist(''EM'',''var'')')
 end
 
 nE = sum(~cellfun(@isempty,{EM.model(1).electrode.name}));
+% nE = size(EM.Fascicle1.pot,1); 
 if isempty(opts.electrode), opts.electrode = 1:nE; end % default: all elec
 
 if numel(opts.fascicle) > 1 || opts.force_mf, % Generate multiple-fascicle figure
@@ -302,7 +303,9 @@ function make_panels_singleFascicle(EM, opts)
 e_id = opts.electrode;
 f_id = opts.fascicle;
 
-nE = sum(~cellfun(@isempty,{EM.model(1).electrode.name}));
+% nE = sum(~cellfun(@isempty,{EM.model(1).electrode.name}));
+
+nE = numel(e_id);
 
 % Standard color-tools for figures
 C = lines(nE); W = @(i,v) (C(i,:)+v)/(1+v); G = @(v) [v v v]/10; 

@@ -13,7 +13,7 @@ function axons = axon_sfap(varargin)
 % 
 % The output SFAP wave is in units of:
 % SFAP (uV) =  I (nA) / [ 4 pi sigma (ohm/m) distance (mm)]
-% The mm and the nA cancel to yield �V, so no further conversion is needed.
+% The mm and the nA cancel to yield uV, so no further conversion is needed.
 % 
 % Core Syntax: 
 %  -file 'sensitivity*.mat' : specify spatial sensitivity function
@@ -229,13 +229,15 @@ for myelin = 0:1 % for each axon class
   end
   
   i2v_pca = cell(size(axon_xy));  
+
+  from_model = pop(sel(1)).axon_model;
     
   if ~opts.use_PCA, i2v_pca = []; 
   else
     for ii = 1:(nG*nF) % The parfor moved to inside get_i2v_pca
       [gg,ff] = ind2sub([nG nF],ii);
       i2v_pca{ii} = get_i2v_pca(sensitivity(:,ff),axon_xy{ii}, ... 
-                                subtype(gg),pop(1).axon_model,opts); %%#ok<PFBNS>
+                                subtype(gg),from_model,opts); %%#ok<PFBNS>
     end  
     i2v_pca = reshape([i2v_pca{:}],nG,nF);  
   end
@@ -534,7 +536,7 @@ for ty = 1:numel(pop)
             pop(ty).axon_model,'Simulating grid of axons', ...
             pop(ty).fibre_diam, pop(ty).g_ratio); 
     end        
-  elseif ~any(named('-q'))
+  else
     if any(named('-cd')), pop(ty).fibre_diam = get_('-cd'); end
     [~,example] = min((src(ty).fibre_diam - pop(ty).fibre_diam).^2);
     pop(ty).size_sample = src(ty).size_sample(example);       

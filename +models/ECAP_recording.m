@@ -69,9 +69,10 @@ for ff = 1:nF % for each fascicle and electrode, make i2v function
 end
 
 % Translate sensitivity peaks if specified
-if any(named('-recenter-peak'))
-  disp('Translating sensitivity peaks...')
-  sensitivity = translate_I2V_peaks(sensitivity, get_('-recenter-peak'));
+if any(named('-recenter-peak')), disp('Translating sensitivity peaks...')
+  sensitivity = translate_I2V_peaks(sensitivity, get_('-recenter-peak'), 0);
+elseif any(named('-displace-p')), disp('Translating sensitivity peaks...')
+  sensitivity = translate_I2V_peaks(sensitivity, get_('-displace-p'), 1);
 end
 
 clear ee ff x_ y_ z_ fac_ f sel ok list
@@ -99,12 +100,10 @@ pop = AX.pop;
 [raster.filename] = deal(list.name);
 full_raster = convert_raster_population(pop,raster); 
 
-
-
 %% Get Distortion if specified
 
-if any(named('-dis'))
-  options.distortion = get_('-dis'); 
+if any(named('-distort'))
+  options.distortion = get_('-distort'); 
   if size(options.distortion,1) == numel(pop)
     options.distortion_by_type = options.distortion; 
   end
@@ -410,15 +409,25 @@ if nargout == 0, clear, end
 return
 
 %% Move sensitivity peak (for electrode array property explorations) 
-function sensitivity = translate_I2V_peaks(sensitivity, z_REF)
+function sensitivity = translate_I2V_peaks(sensitivity, z_REF, basic)
 %%
+
+nE = evalin('caller','nE');
+nF = evalin('caller','nF');
+
+x_ = evalin('caller','x_');
+y_ = evalin('caller','y_');
+z_ = evalin('caller','z_');
+fac_ = evalin('caller','fac_');
+
+if nargin < 3, basic = false; end
 
 if numel(z_REF) < nE, 
   z_REF = repmat(z_REF(:), [ceil(nE/numel(z_REF)) 1]); 
 end
 
-color = 1-summer(nE);
-figure(3), clf
+color = 1-summer(nE); 
+clf
 
 for ff = 1:nF % for each fascicle 
   xy = [mean(z_(fac_(ff))) mean(y_(fac_(ff)))];
@@ -427,9 +436,13 @@ for ff = 1:nF % for each fascicle
   for ee = 1:nE
 
     pk0 = sensitivity{ee,ff}([xy 0] + z'*[0 0 1]); 
-    [~,id] = nanmax(pk0);   
+    [~,id] = nanmax(pk0);
+    if basic, delta_z = z_REF(ee);
+    else      delta_z = z_REF(ee) - z(id);
+    end
+
     sensitivity{ee,ff}.Points(:,3) = sensitivity{ee,ff}.Points(:,3) ...
-                                     - z(id) + z_REF(ee);
+                                     + delta_z;
     pk1 = sensitivity{ee,ff}([xy 0] + z'*[0 0 1]);    
     plot(z,pk0,':','Color',color(ee,:),'LineWidth',1.2)
     plot(z,pk1,'-','Color',color(ee,:),'LineWidth',1.2)
@@ -540,3 +553,4 @@ function wave = parfun_unpack(cache_path,fun,nGnF,ii)
   tools.cache('set',cache_path)
   [gg,ff] = ind2sub(nGnF,ii);
   wave = fun(gg,ff); 
+

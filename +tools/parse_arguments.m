@@ -102,21 +102,19 @@ end
 %% get EIDORS file (either stim or sens)
 if any(request('eidors'))
   %%
-  eidors_file = tools.file('eidors~\');
-  
+  eidors_file = tools.file('eidors~\');  
+
   % model_functions accept eidors_file as a first argument
   if numel(user_args) > 0 && ischar(user_args{1})
       eidors_file = user_args{1}; 
   end
 
   if any(request('stim')) && isfolder(eidors_file)    
-    if any(named('-stim'))
-      user_args(find(named('-stim'))+1) = {eidors_file}; 
-    else
+    if ~any(named('-stim'))
       user_args = [user_args {'-stim', eidors_file}];
+      named = @(v) strncmpi(v,user_args,length(v)); 
+      get_ = @(v) user_args{find(named(v))+1};    
     end
-    named = @(v) strncmpi(v,user_args,length(v)); 
-    get_ = @(v) user_args{find(named(v))+1};    
     
     % Detect eidors file from stimulus folder data
     if ~any(named('-eidors')) && ~any(named('-file'))
@@ -142,8 +140,8 @@ if any(request('eidors'))
         end
       catch C, eidors_file = tools.file('eidors~\');
       end
-    end
-  end
+    end % no explicit -eidors or -file
+  end % STIM requested
   
   
   % models.function( ..., '-file', eidors_file ) also valid
@@ -197,7 +195,9 @@ if any(request('axon'))
   % model_functions accept axons_file/axons_folder as argument #2
   if any(named('-ax')), axon_file = get_('-ax');    
   elseif numel(user_args) > 1 && ischar(user_args{2}) && exist(user_args{2},'file')
-    assert(contains(user_args{2},'axon'),'expected positional argument 2: axons')
+    if ~contains(user_args{2},'axon')
+        error('expected positional argument 2: axons')
+    end
     if isfolder(user_args{2}), axons_folder = user_args{2}; 
     else axon_file = user_args{2};
     end
