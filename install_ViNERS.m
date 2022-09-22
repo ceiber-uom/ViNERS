@@ -1,5 +1,22 @@
 
 function install_ViNERS
+% This user interface should guide you through the process of installing
+% ViNERS on your machine. This is a matlab repository with several external
+% dependencies which is designed to work within a SPARC data structure.
+% This UI will help you download and install gmsh, neuron, eidors
+% (each a dependency of eidors) and should work for PC, mac, or linux. 
+% 
+% Tested on several different versions of matlab (2019b - 2022a), should
+% work without issues if your version of matlab supports uifigure
+% 
+%  https://github.com/ceiber-uom/ViNERS/wiki/Installation
+%  https://www.biorxiv.org/content/10.1101/2021.02.10.430563v2
+% 
+% Version History: 
+% v1.0 - wrote it. 
+% v1.3 - change to github path (formerly the UoM public gitlab)
+% 
+% 22 September 2022 - Calvin Eiber <c.eiber@ieee.org>
 
 set(0,'ShowHiddenHandles','on'), delete(get(0,'Children'))
 set(0,'ShowHiddenHandles','off')
@@ -14,7 +31,7 @@ done = onCleanup(@() diary('off'));
 if ismac, setup_ViNERS_on_mac
 elseif isunix, setup_ViNERS_on_unix    
 elseif ispc, setup_ViNERS_on_PC
-else error('Platform not supported')
+else error('Platform not supported, please install manually')
 end
 
 
@@ -968,5 +985,6 @@ end
 return
 
 function p = gitlab_path(varargin)
-p = 'https://gitlab.unimelb.edu.au/lab-keast-osborne-release/ViNERS';
+% p = 'https://gitlab.unimelb.edu.au/lab-keast-osborne-release/ViNERS';
+p = 'https://github.com/ceiber-uom/ViNERS';
 p = strcat(p,varargin{:});
