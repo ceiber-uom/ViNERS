@@ -62,13 +62,12 @@ function result = axon_model(index, field, varargin)
 %                                  biophysical parameters (e.g. Sobol')
 % -no-analysis: return raw output from NEURON
 %
-%
 % This depends on C:\neuron\bin\nrniv.exe existing and that nrniv.exe can 
 % be executed from from the system command-line. Executing the neuron model
 % can be slow; however, this code will hang in near line 96 if there are
 % any problems executing the neuron model. If this code takes excessively
 % long, try running with -debug to view the neuron output (the system call
-% which invokes neuron is run with -echo on)
+% which invokes neuron will then be run with -echo on)
 % 
 % model version 0.5 Calvin Eiber 18 Nov 2020
 

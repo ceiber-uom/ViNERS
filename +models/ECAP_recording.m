@@ -1,22 +1,58 @@
 
 function ECAP_recording(varargin)
-% TODO add header documentation : raw docstring below
-% models.ECAP_response( sensitivity(*).mat, '-stim' stim_folder, ... )
+% models.ECAP_response( sensitivity(*).mat, '-stim', stim_folder, ... )
 % 
-%  if any(named('-file')), eidors_file = get_('-file'); end
-%  if ('-root')), opts.axons_folder = get_('-root'); end
-%  if ('-root')), opts.stim_folder = get_('-stim'); end
-%  if ('-out')), e_name = get_('-out');
+% MODELS.ECAP_RESPONSE computes simulated electrically-evoked compound 
+%   action potential (ECAP) recordings for a given axon population, 
+%   nerve anatomy, neural interface configuration, and stimuli. 
 % 
-%  if ('-distortion')), apply systemic distortion to Im [v z t]
-%  if ('-debug-distortion')), opts.plot_image = true; end
-%  if ('-recenter-peak')) % explan this complicated proc
+% MODELS.ECAP_RESPONSE requires: 
+%   - a sensitivity field (generated using models.nerve_anatomy),
+%   - stimulated spike-times (generated using models.nerve_stimulation), 
+%   - an input population (generated using models.axon_population),
+%   - membrane current profiles (generated using models.membrane_currents),
 % 
-%  if ('-fs')),      fs = get_('-fs');
-%  if ('-time')),  time_span = get_('-time');
-%  if ~('-unit-um')), xy = xy / 1e3; end % um -> mm
-%  if any(named('-preview'))
-%  if ('-fascicle-sum'))
+% If these are not supplied, defaults are used based on the current subject
+%   (set using tools.file) or the user is supplied with a UI menu to pick
+%   appropriate input files. 
+% 
+% Additional options:
+% -axons [axons.mat]: specify axon population for SFAP calculation, 
+%                     defaults to newest axons file in axons~/ 
+% -currents [currents_folder]: specify root folder for membrane currents.
+% -out [folder]: set output location. IF a complete path, this path is used
+%                as-is, otherwise the output folder is located at waves~/
+%                inside the subject folder. Default is based on the input
+%                sensitivity.mat file. 
+% -time [t] : set time window for simulation, default ± 65 ms (I usually
+%             trim the first and last 15 ms to give a 100 ms window) 
+% -fs [30] 
+% 
+% -debug-units : Set up the calculation and display axon trajectories 
+%                against the fascicle, useful for debugging units issues.
+%                If needed, you can use -unit-um to toggle um->mm
+%                conversion. 
+% 
+% Advanced options: 
+% -zref [0] : set the Z-coordinate of the reference location for the
+%             spike-times. 
+% -f-list [f] : restrict the simulation to just a limited number of
+%               fascicles of interest (usually not needed).
+% -fascicle-sum : if set, take the sum across fascicles when saving data.
+%                 (default: save the wave for each fascicle seperately)
+% -recenter-peak [new_x] : shift simulated sensitivity peaks in space. 
+%                          Useful if various electrode designs were
+%                          simulated in a single mesh for efficiency. 
+% -distortion [v z t] : apply a distortion triplet to simulate global
+%                       changes in spike conduction across all axons
+% -debug-distortion : visualise the relative change linked to the applied
+%                     distortion triplet.
+% 
+% -axon-trajectory [atd] : use curving or explicit axon trajectory data. 
+% -no-parallel : disable parallel compute (sometimes better for debugging)
+% 
+% v1.3.1 - Calvin Eiber <c.eiber@ieee.org> 
+%  Added improved function documentation, implemented -resume mode.     
 
 varargin = tools.opts_to_args(varargin,'ecap');
 named = @(v) strncmpi(v,varargin,length(v)); 

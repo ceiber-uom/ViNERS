@@ -7,8 +7,9 @@ function [wave,wave_spk1] = spike_to_wave(g_id,time,sensors,g_xy,options)
 % time = simulation time-points
 % sensors = sensitivity (function handle)
 % g_xy = xy co-ordinates of axons (units to match sensors) 
-% % if g_xy is 2D, assume straight fascicles; 
-
+%  if g_xy is 2D, assume straight fascicles; otherwise may be 3D trajectory
+%  fascicles. 
+% 
 % options
 %   .raster = models.random_raster % what spike pattern to simulate?
 % 
