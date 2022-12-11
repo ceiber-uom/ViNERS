@@ -1,42 +1,73 @@
 
 function settings = nerve_recording(varargin)
-% TODO add header documentation : raw docstring below
-%
-%  if any(named('-list-modes')), return settings
-%  if any(named('-file')), eidors_file = get_('-file'); end
+% models.nerve_recording( [sensitivity.mat], [axons.mat], [mode], ... )
 % 
-%  if ('-recenter-peak')) % explan this complicated proc
-%  if ('-root')), opts.axons_folder = get_('-root'); end
-%  if ('-dis')),
-%  if ('-debug-distortion')), opts.plot_image = true; end
-%  if ('-coh')), cohere_settings = get_('-coh');
-%  if ('-zref')) z_ref = get_('-zref'); end
-%  if ('-fs')),      fs = get_('-fs');
-%  if ('-time')),  time_span = get_('-time');
-%  if ('-rep')), settings.n_reps = get_('-rep'); end
-%  if ~('-unit-um')), xy = xy / 1e3; end % um -> mm
-%  if ('-set-r')), get_raster_ = get_('-set-r');
-%  if ('-debug-u'))
-%  if ('-DEBUG'))
-%  if ('-fascicle-sum'))
-%  if ('-out')), e_name = get_('-out');
+% MODELS.NERVE_RECORDING computes simulated electroneurograms (ENG) for a
+%   given axon population, nerve anatomy, neural interface configuration, 
+%   and pattern of population activity. MODELS.NERVE_RECORDING requires: 
+%   - an input population (generated using models.axon_population), 
+%   - a sensitivity field (generated using models.nerve_anatomy), and
+%   - membrane current profiles (generated using models.membrane_currents).
 % 
-% -f-list [list] : simulate just the listed fascicles 
+% If these are not supplied, defaults are used based on the current subject
+%   (set using tools.file) or the user is supplied with a UI menu to pick
+%   appropriate input files. 
 % 
-% in function opts = get_settings(varargin):
-%  named = @(v) strncmpi(v,varargin,length(v));
-%  get_ = @(v) varargin{find(named(v))+1};
-%  if any(named('-settings')), opts = get_('-settings'); return, end
-%  if any(named(['-' opts(x).name])), opts = opts(x); return, end
+% the MODE arument selects a built-in temporal patterns, which is one of 
+%   'DEFAULT', 'FLAT', 'BASE', 'DRIFT', 'PULSE', 'BURST', or 'PHASE'. 
+%   Further customisation of the temporal pattern of spiking can be
+%   accomplished using: 
 % 
-% opts(1).name = 'default';
-% opts(2).name = 'base';
-% opts(3).name = 'drift';
-% opts(4).name = 'ecap';
-% opts(5).name = 'burst';
-% opts(6).name = 'phase';
-% opts(7).name = 'flat';
+%   `configurations = models.nerve_recording( '-list-modes' )`
+%   `configurations(1).property = value`
+%   `models.nerve_recording( '-settings', configurations(1) )`
 % 
+% Additional options:
+% -axons [axons.mat]: specify axon population for SFAP calculation, 
+%                     defaults to newest axons file in axons~/ 
+% -currents [currents_folder]: specify root folder for membrane currents.
+% -out [folder]: set output location. IF a complete path, this path is used
+%                as-is, otherwise the output folder is located at waves~/
+%                inside the subject folder. Default is based on the input
+%                sensitivity.mat file. 
+% -time [t] : set time window for simulation, default ± 65 ms (I usually
+%             trim the first and last 15 ms to give a 100 ms window) 
+% -fs [30] 
+% -rep [x]  : set number of replicates, usually defaults to 3
+% -coh [x]  : set the levels for the 'coherence' variable. 
+% 
+% -resume   : skip generation of files which already exist. Useful if a 
+%             previous run crashed unexpectedly. 
+% -clf      : if the output folder already exists, erase it.
+%             (default: add to the files in the output folder). 
+% -debug-units : Set up the calculation and display axon trajectories 
+%                against the fascicle, useful for debugging units issues.
+%                If needed, you can use -unit-um to toggle um->mm
+%                conversion. 
+% 
+% Advanced options: 
+% -zref [0] : set the Z-coordinate of the reference location for the
+%             spike-times. 
+% -f-list [f] : restrict the simulation to just a limited number of
+%               fascicles of interest (usually not needed).
+% -fascicle-sum : if set, take the sum across fascicles when saving data.
+%                 (default: save the wave for each fascicle seperately)
+% -recenter-peak [new_x] : shift simulated sensitivity peaks in space. 
+%                          Useful if various electrode designs were
+%                          simulated in a single mesh for efficiency. 
+% -distortion [v z t] : apply a distortion triplet to simulate global
+%                       changes in spike conduction across all axons
+% -debug-distortion : visualise the relative change linked to the applied
+%                     distortion triplet.
+% 
+% -axon-trajectory [atd] : use curving or explicit axon trajectory data. 
+% -raster [handle] : override the call to models.random_raster to use
+%                    explicit sets of spike patterns for simulation. Can be
+%                    a function handle, a cell array of raster results, or
+%                    a filename to a file with spike raster data. 
+% 
+% v1.3.1 - Calvin Eiber <c.eiber@ieee.org> 
+%  Added improved function documentation, implemented -resume mode.     
 
 varargin = tools.opts_to_args(varargin,'recording');
 named = @(v) strncmpi(v,varargin,length(v)); 
@@ -92,7 +123,7 @@ for ff = 1:nF % for each fascicle and electrode, make i2v function
  end
 end
 
-clear ee ff x_ y_ z_ fac_ f sel ok
+clear ee f                                  f x_ y_ z_ fac_ f sel ok
 
 % Translate sensitivity peaks if specified
 if any(named('-recenter-peak'))
@@ -171,7 +202,7 @@ if any(named('-raster')),
 end
 
 warn_once = true; 
-check_folder = true; 
+get_output_file_location(); % reset: set 'check_folder = true'
 
 %% Compute intracellular-to-extracellular relationship
 for i_rep = 1:n_rep
@@ -185,11 +216,23 @@ for i_rep = 1:n_rep
       continue
     end
 
+    %% Get output location. If -resume set, check for continue logic
+
+    file_out = get_output_file_location(get_, named, settings, ...
+                                        [i_rate i_freq i_coh i_rep]);
+    if isempty(file_out) && any(named('-resume'))
+        continue
+    elseif any(named('-resume')), 
+        disp(['Computing ' tools.file('T',file_out)])
+    end
+
+    %% For each axon, build up set of waves based on population activity
+
     waves = []; 
-    raster = {}; 
+    raster = {};        
     options = []; 
         
-    for ty = 1:numel(pop)
+    for ty = 1:numel(pop) % For each kind of axon 
         
       time = 0:(1/fs):(time_span);
       time = [-fliplr(time) time(2:end)]; % ms
@@ -372,7 +415,7 @@ for i_rep = 1:n_rep
         %%
         return
       end
-      
+
       %% CORE parfor: Compute summation of currents from spike raster
       printf('Computing spatial summation of %d APs ... ',numel(opts.raster.spk_time))
       cache_path = tools.cache('path');
@@ -421,13 +464,12 @@ for i_rep = 1:n_rep
     if warn_once && all(summary == 0)
         warning('ViNERS:possibleUnitsFail','WAVE was all-zeros, try calling with -unit-um or -debug-units')
         warn_once = false; 
-    end      
-     
-    
+    end
+         
     %% Debug visualisations / inspection utilities 
-    if 0
+    while 0, break
       %% Look at resulting overall recordings 
-
+      
       clf %#ok<UNRCH>
       plot(time,waves(:,:,end) + (0:3)), ax = gca;
       xlim(time([1 end]))
@@ -485,44 +527,7 @@ for i_rep = 1:n_rep
     elseif size(waves,3) == 1, waves = squeeze(waves); 
     end
 
-    clear gg ff ee g_xy ii xy grp ty fid ans
-    
-    if any(named('-out')), wave_path = get_('-out');
-      if any(wave_path == '~'), wave_path = tools.file(wave_path); end
-      if ~any(ismember('\/',wave_path)), % put in ~waves/
-        if any(ismember('()',wave_path)), % cat settings.wave_path 
-          wave_path = [settings.wave_path ' ' wave_path];  %#ok<AGROW>
-        end
-        wave_path = [tools.file('waves~/') wave_path ]; %#ok<AGROW>
-      end
-    else % replace sensitivity with wave_path
-      wave_path = regexprep(EM.filename,'sens[^\s\(]*', settings.wave_path);
-      wave_path = [tools.file('waves~/') wave_path ]; %#ok<AGROW>
-    end
-    
-    wave_path = [wave_path filesep]; %#ok<AGROW>
-    
-    file_out = sprintf(settings.file_scheme,settings.file_vector( ...
-                      settings.exponent(min(i_freq,end)), ...
-                      settings.spikerate(i_rate,:), ...
-                      settings.frequency(min(i_freq,end)), ...
-                      settings.coherence(i_coh))); 
-    
-    file_out = tools.file('get',[wave_path strrep(file_out,'.0_','_')],'next'); 
-
-    if ~exist(fileparts(file_out),'dir'), mkdir(fileparts(file_out)),
-      check_folder = false;
-    elseif check_folder
-      if any(named('-clf'))
-        warning('ViNERS:overwriteFolder','erasing the pre-existing directory %s', tools.file('T',wave_path))
-        rmdir(fileparts(file_out),'s'), mkdir(fileparts(file_out))
-      else
-        warning('ViNERS:possibleOverWrite','possibly writing in a pre-existing directory %s', tools.file('T',wave_path))
-      end
-      check_folder = false; 
-    end
-    
-    
+    clear gg ff ee g_xy ii xy grp ty fid ans    
     
     options(1).class = {options.class};
     options(1).spike_rate = [options.spike_rate];
@@ -614,7 +619,7 @@ else
   opts(7).spikerate = [0.1 0.2 0.5 1 2 5 10 20]';
 
   for x = 1:numel(opts)+1
-    if x > numel(opts), return, end
+    if x > numel(opts), break, end
     if any(named(opts(x).name)), opts = opts(x); break, end  
     if any(named(['-' opts(x).name])), opts = opts(x); break, end  
   end
@@ -624,13 +629,13 @@ end
 for fi = fieldnames(opts)' % check setting-field names 
   if any(named(fi{1})), 
     if ~any(named('-q')), fprintf('update settings.(%s)\n', fi{1}); end 
-    opts.(fi{1}) = get_(fi{1}); 
+    opts(1).(fi{1}) = get_(fi{1}); 
   end
 end
 
 if any(named('spikerate')) % check size of input spikerate
-  nD = size(opts.spikerate); % columns = 
-  if nD(1) == 1, opts.spikerate = opts.spikerate'; end
+  nD = size(opts(1).spikerate); % columns = 
+  if nD(1) == 1, opts(1).spikerate = opts(1).spikerate'; end
 end
 
 return
@@ -871,3 +876,63 @@ raster.epoch_info = info;
 raster.spk_time = spk_time;
 raster.spk_axon = spk_unit;
 if ~isempty(spk_pidx), raster.population_id = spk_pidx; end
+
+function filename = get_output_file_location(get_, named, settings, indices)
+% get_output_file_location(get_, named, settings, indices)
+% indices = [i_rate i_freq i_coh i_rep]
+
+
+persistent check_folder
+if isempty(check_folder), check_folder = true; end
+if nargin < 4, check_folder = true; return, end
+
+if any(named('-out')), wave_path = get_('-out');
+  if any(wave_path == '~'), wave_path = tools.file(wave_path); end
+  if ~any(ismember('\/',wave_path)), % put in ~waves/
+    if any(ismember('()',wave_path)), % cat settings.wave_path 
+      wave_path = [settings.wave_path ' ' wave_path];
+    end
+    wave_path = [tools.file('waves~/') wave_path ];
+  end
+else % replace sensitivity with wave_path
+  EM = evalin('caller','EM');
+  wave_path = regexprep(EM.filename,'sens[^\s\(]*', settings.wave_path);
+  wave_path = [tools.file('waves~/') wave_path ];
+end
+    
+wave_path = [wave_path filesep];
+
+filename = sprintf(settings.file_scheme,settings.file_vector( ...
+                   settings.exponent(min(indices(2),end)), ...
+                   settings.spikerate(indices(1),:), ...
+                   settings.frequency(min(indices(2),end)), ...
+                   settings.coherence(indices(3)))); 
+    
+filename = tools.file('get',[wave_path strrep(filename,'.0_','_')],'next'); 
+
+if any(named('-resume')), check_folder = false;
+    % Check to see if the (%%d) part of the filename from tools.get matches
+    % what we expect based on the supplied replicate index. 
+    actual_replicate = regexp(filename,'\(\d+\)\.mat','match');
+    if ~strcmp(actual_replicate,sprintf('(%d).mat', indices(4))), 
+        filename = ''; return, 
+    end
+end
+
+
+if ~exist(fileparts(filename),'dir'), mkdir(fileparts(filename)),
+  check_folder = false;
+elseif check_folder
+  if any(named('-clf'))
+    warning('ViNERS:overwriteFolder', ...
+            'erasing the pre-existing directory %s', ...
+             tools.file('T',wave_path))
+    rmdir(fileparts(filename),'s'), 
+    mkdir(fileparts(filename))
+  else
+    warning('ViNERS:possibleOverWrite', ...
+            'possibly writing in a pre-existing directory %s', ...
+             tools.file('T',wave_path))
+  end
+  check_folder = false; 
+end
