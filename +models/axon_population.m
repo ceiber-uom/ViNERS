@@ -1,13 +1,14 @@
 
 function [pop, sam] = axon_population(varargin)
-% pop = make_axon_population([type], ... )
+% pop = make_axon_population([dataset_name], ... )
 % make_axon_population takes a set of fascicle contours and a specification
 %   for the axon populations, and populates the fascicles with axons with
 %   varying diameters and g-ratios. 
 % 
 % We have data-sets scraped from published papers or the SPARC data portal. 
-% Data-sets scraped from published papers often rely on reconstructing the 
-%   underlying joint distribution from the published marginal histograms.
+%  Data-sets scraped from published papers often rely on reconstructing the 
+%  underlying joint distribution from the published marginal histograms.
+%  For a list of valid data-sets, run models.axon_population('help data')
 % 
 % by default, the current fascicle pattern defined in 
 % >> mesh.insert_gmsh_fascicles
@@ -60,7 +61,6 @@ function [pop, sam] = axon_population(varargin)
 % Version 0.3, refactored to enable code-free addition of new datasets 
 % Version 0.2, refactored to merge approaches
 % Calvin Eiber 16-April-2020 ceiber@unimelb.edu.au
-
 
 
 close all
@@ -187,7 +187,7 @@ if max(abs(pop.fibre_xy(:))) > 10 && ~any(named('-units-no-c'))
   pop.fibre_xy = pop.fibre_xy / 1e3;
   pop.unmyelinated_xy = pop.unmyelinated_xy / 1e3;
     warning('ViNERS:make_axon_population:outputUnits', ...
-            'Converting output units from µm to mm.')
+            'Converting output units from Âµm to mm.')
 end
 
 if any(named('-mat-legacy'))
@@ -299,7 +299,7 @@ d('-q             : If set, quiet mode')
 d('-secondary []  : synonym for -backup')
 d('-units-no-convert   : If not set, if any axons have |x| or |y| > 10 it')
 d('                      is assumed that the input geometry was specified')
-d('                      in µm and length units are converted to mm.')
+d('                      in Âµm and length units are converted to mm.')
 d('-use-count : If set, absolute counts for each axon type will be used to')
 d('             determine the number of axons if available (default: use')
 d('             per_mm2 values if available).')
@@ -429,7 +429,7 @@ else
 
   sel = 0; 
 
-  for vec = { {index.entry}, {index.short}, strcat('-',{index.short})}
+  for vec = [ {index.entry}, {index.short}, strcat('-',{index.short})] % fixed CE 13-07-23 for R2022a
 
     hit = ismember(arg,upper(vec{1}));
     if any(hit), sel = find(hit,1); break, end
@@ -917,7 +917,7 @@ if max(abs(nerve.fascicles(:))) > 10 && ~any(named('-units-no-c'))
   nerve.outline = nerve.outline / 1e3;
   nerve.fascicles = nerve.fascicles / 1e3;
   warning('ViNERS:make_axon_population:inputUnits', ...
-          'Converting input units from µm to mm.')
+          'Converting input units from Âµm to mm.')
 end
 
 
@@ -1859,7 +1859,7 @@ else  x = 36;
 end
 [y,x] = hist(pop.fibre_diam,x); %#ok<*HIST>
 bar(x,y/sum(y),1,bar_style{:})
-tools.tidyPlot, xlabel('fibre diameter (µm)')
+tools.tidyPlot, xlabel('fibre diameter (Âµm)')
 
 subplot(3,3,6), hold on
 
@@ -1873,7 +1873,7 @@ end
 [y,x] = hist(pop.fibre_axon,x); 
 bar(x,y/sum(y),1,bar_style{:})     
 
-tools.tidyPlot, xlabel('axon diameter (µm)')
+tools.tidyPlot, xlabel('axon diameter (Âµm)')
 
 subplot(3,3,9), hold on
 if D.index(1) > 0, v = var_(1); 
@@ -1889,7 +1889,7 @@ elseif numel(D.index) > 4 && D.index(5) > 0, v = var_(5);
   bar(v.x,v.y,1,'FaceColor',[.7 .7 .7],'EdgeColor','none')    
   y = hist(pop.fibre_diam - pop.fibre_axon,v.x); 
   bar(v.x,y/sum(y),1,bar_style{:})
-  tools.tidyPlot, xlabel('sheath width (µm)')
+  tools.tidyPlot, xlabel('sheath width (Âµm)')
 end
 
 return
