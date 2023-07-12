@@ -429,9 +429,9 @@ else
 
   sel = 0; 
 
-  for vec = [ {index.entry}, {index.short}, strcat('-',{index.short})] % fixed CE 13-07-23 for R2022a
+  for vec = {{index.entry}, {index.short}, strcat('-',{index.short})}
 
-    hit = ismember(arg,upper(vec{1}));
+    hit = ismember(arg,upper(vec{1})); % which ARG is in the list?
     if any(hit), sel = find(hit,1); break, end
   end
 
@@ -445,7 +445,7 @@ else
     end
   end
 
-  sel = find(ismember(upper(vec{1}),arg{sel}),1);
+  sel = find(ismember(upper(vec{1}),arg{sel}),1); % which item in the list is the selected ARG?
   
   source_path = tools.file(['~/source/axons/' index(sel).entry]);  
 end
