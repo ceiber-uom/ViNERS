@@ -19,7 +19,7 @@
     // For documentation about these configurations, see mesh.insert_gmsh_fascicles
 
     // "pIndex":    [3, 1],
-    // "pLocation": [[0 100], [200 100]], // µm x y, y is electrode-nerve distance
+    // "pLocation": [[0 100], [200 100]], // Âµm x y, y is electrode-nerve distance
     // "pRotation": [0,0], // deg
 
     // transform resulting pattern 
@@ -32,9 +32,9 @@
     "MeshLengthFascicle": 0.015
   },
   "axons": {
-    "source":"pelvic-nerve", // rat pelvic nerve
+    "source":"rat-vagus-cervical", // was rat pelvic nerve
     "downsample": [5, 5, 5, 5], // for testing purposes.
-    "filename":"pelvic-axons"
+    "filename":"rat-vagus-cervical"
   }, 
   "stimulation": { // default stimulus amplitudes
     "downsample": [1, 1, 10, 10], // Recommended default for pelvic nerve 
