@@ -282,6 +282,7 @@ for ty = 1:numel(pop)
   opts.padding = 2;
   opts.efferent = ~pop(ty).afferent;
   
+  
   [subtype,index,axon_xy] = get_axon_xy(EM, pop(ty));
   axon_xy(all(cellfun(@isempty,axon_xy),2),:) = [];  
   
